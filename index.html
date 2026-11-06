@@ -937,7 +937,7 @@ function homeHTML(){
     '</section>' +
     '<section class="modes">' +
       '<button class="mode hot" data-go="daily"><span class="ico">15</span><span><b>今日送電</b><span>' + (due ? due + ' 題到期複習，' : '') + '補最弱的 4 個回路</span></span><span class="go">開始</span></button>' +
-      '<button class="mode" data-go="sweep"><span class="ico">19</span><span><b>全盤巡檢</b><span>19 個工作項目各抽 1 題＋最弱回路 1 題，每題看詳解，結束出巡檢報告' + (S.best.sweep ? '・最佳 ' + S.best.sweep + '/20' : '') + '</span></span><span class="go">開始</span></button>' +
+      '<button class="mode" data-go="sweep"><span class="ico">19</span><span><b>全盤巡檢</b><span>隨機 20 題，熱身複習兩相宜' + (S.best.sweep ? '・最佳 ' + S.best.sweep + '/20' : '') + '</span></span><span class="go">開始</span></button>' +
       '<button class="mode" data-go="exam"><span class="ico">80</span><span><b>模擬考</b><span>單選 60＋複選 20，100 分鐘，60 分及格' + (S.best.exam ? '・最佳 ' + S.best.exam + ' 分' : '') + '</span></span><span class="go">開始</span></button>' +
       '<button class="mode" data-go="review"' + (wrongs ? '' : ' disabled') + '><span class="ico">' + wrongs + '</span><span><b>錯題重修</b><span>' + (wrongs ? '答錯且還沒熟練的題目，每次 12 題' : '目前沒有待重修的錯題') + '</span></span><span class="go">開始</span></button>' +
     '</section></div>' +
