@@ -83,7 +83,14 @@ h1,h2,h3{text-wrap:balance;margin:0;line-height:1.25}
 .xpbar i{display:block;height:100%;background:var(--meter-fill);transition:width .5s}
 .stats{display:flex;gap:14px;font-size:13px;color:var(--muted);flex-wrap:wrap}
 .stats b{color:var(--ink);font-family:var(--f-num);font-size:17px;font-weight:700}
-.sync{font-size:11px;font-family:var(--f-mono);color:var(--muted)}
+.sync{font-size:11px;font-family:var(--f-mono);color:var(--muted);background:transparent;border:1px dashed var(--line);border-radius:999px;padding:2px 10px;cursor:pointer;min-height:28px}
+.sync.on{border-style:solid;color:var(--ink)}
+.acct-in{width:100%;font:inherit;padding:10px 12px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);margin-top:12px}
+.acct-msg{min-height:1.5em;font-size:14px;margin:8px 0 0}
+.acct-msg.bad{color:var(--bad)}
+.acct-cmp{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.acct-cmp>div{border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:14px;display:grid;gap:2px}
+.acct-cmp b{font-size:15px}
 .tabs{display:flex;gap:4px;margin-block:12px 18px;overflow-x:auto}
 .tab{border:0;background:transparent;padding:8px 14px;border-radius:6px;cursor:pointer;color:var(--muted);font-weight:500;white-space:nowrap}
 .tab[aria-selected="true"]{background:var(--tab-active-bg);color:var(--tab-active-fg)}
@@ -425,7 +432,7 @@ body{padding-bottom:72px}
   <header class="top">
     <div class="brand"><h1>乙級送電計畫</h1><span class="mono">00700 室內配線 乙級學科</span></div>
     <div class="rank"><b id="rankName">學徒</b><div class="xpbar"><i id="xpFill" style="width:0"></i></div><span class="num" id="xpText">0 積分</span></div>
-    <div class="stats"><span>連續 <b id="stStreak">0</b> 天</span><span>今日 <b id="stToday">0</b>/30 題</span><span class="sync" id="sync">本機儲存</span><button class="skinbtn" data-skinopen="1" aria-label="更換配色"><i aria-hidden="true"></i>配色</button></div>
+    <div class="stats"><span>連續 <b id="stStreak">0</b> 天</span><span>今日 <b id="stToday">0</b>/30 題</span><button class="sync" id="sync" data-acct="1" aria-label="帳號與同步">本機儲存</button><button class="skinbtn" data-skinopen="1" aria-label="更換配色"><i aria-hidden="true"></i>配色</button></div>
   </header>
   <nav class="tabs" id="tabs" role="tablist">
     <button class="tab" role="tab" data-tab="home" aria-selected="true">受電盤</button>
@@ -493,13 +500,118 @@ try { const r = localStorage.getItem(LS); if (r) S = adopt(JSON.parse(r)); } cat
 let dbRef = null, saving = false, again = false, saveT = null;
 function save(){ S.t = Date.now(); try { localStorage.setItem(LS, JSON.stringify(S)); } catch(e) {} clearTimeout(saveT); saveT = setTimeout(flush, 1200); }
 async function flush(){
-  if (!dbRef) return; if (saving) { again = true; return; }
+  saveT = null; if (!dbRef && !ACCT) return; if (saving) { again = true; return; }
   saving = true;
-  try { await dbRef.set(JSON.parse(JSON.stringify(S))); setSync('雲端同步'); }
-  catch(e){ if (e && (e.code === 'invalid_argument' || e.code === 'revoked' || e.code === 'not_granted')) { dbRef = null; setSync('本機儲存'); } }
+  if (dbRef) {
+    try { await dbRef.set(JSON.parse(JSON.stringify(S))); setSync('雲端同步'); }
+    catch(e){ if (e && (e.code === 'invalid_argument' || e.code === 'revoked' || e.code === 'not_granted')) { dbRef = null; setSync('本機儲存'); } }
+  } else await acctPush(!!R);
   saving = false; if (again) { again = false; flush(); }
 }
-function setSync(t){ const el = document.getElementById('sync'); if (el) el.textContent = t; }
+function setSync(t){ const el = document.getElementById('sync'); if (el) { el.textContent = t; el.classList.toggle('on', !!(dbRef || ACCT)); } }
+
+/* ---- 帳號同步：只用帳號名稱，不用密碼；30 天沒使用由伺服器自動刪除 ---- */
+const LSA = 'yiji-acct', ACCT_DAYS = 30;
+let ACCT = null, acctAt = 0;
+try { ACCT = localStorage.getItem(LSA) || null; } catch(e) {}
+async function api(op, body, keepalive){
+  const payload = JSON.stringify(Object.assign({op}, body));
+  try {
+    const r = await fetch('/api/sync', {method:'POST', headers:{'Content-Type':'application/json'}, body:payload, keepalive: !!keepalive && payload.length < 60000});
+    let j = {}; try { j = await r.json(); } catch(e) {}
+    return Object.assign({}, j, {status:r.status});
+  } catch(e) { return {status:0, error:'連不上網路'}; }
+}
+function setAcct(n){ ACCT = n; try { n ? localStorage.setItem(LSA, n) : localStorage.removeItem(LSA); } catch(e) {} }
+function acctLabel(){ if (dbRef) return; setSync(ACCT ? '☁ ' + ACCT : '本機儲存'); }
+function useRemote(d){
+  S = adopt(d); try { localStorage.setItem(LS, JSON.stringify(S)); } catch(e) {}
+  if (S.opt.skin) applySkin(S.opt.skin, false);
+  if (!R) render(); header();
+}
+function lost(){ const n = ACCT; setAcct(null); acctLabel(); toast('帳號「' + n + '」已不存在（可能超過 ' + ACCT_DAYS + ' 天沒使用被刪除），進度改存在這個瀏覽器'); }
+// force：雲端比較新也照樣覆蓋（作答中以這個瀏覽器為準）
+async function acctPush(force, keepalive){
+  if (!ACCT) return;
+  const r = await api('push', {name:ACCT, data:S, force}, keepalive);
+  if (r.status === 200) { acctAt = Date.now(); acctLabel(); }
+  else if (r.status === 409 && r.data) { acctAt = Date.now(); useRemote(r.data); acctLabel(); toast('已載入其他瀏覽器較新的進度'); }
+  else if (r.status === 404) lost();
+  else setSync('☁ ' + ACCT + '（離線）');
+}
+async function acctPull(){
+  if (!ACCT || dbRef) return;
+  const r = await api('pull', {name:ACCT});
+  if (r.status === 404) return lost();
+  if (r.status !== 200) return setSync('☁ ' + ACCT + '（離線）');
+  acctAt = Date.now();
+  if (r.data && (r.t||0) > (S.t||0)) { if (!R) useRemote(r.data); }
+  else if ((S.t||0) > (r.t||0)) await acctPush(false);
+  acctLabel();
+}
+const seenN = d => d && d.q ? Object.keys(d.q).length : 0;
+const whenTxt = t => t ? new Date(t).toLocaleString('zh-TW', {month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit'}) : '—';
+function acctSheet(msg, bad, cmp){
+  let body;
+  if (dbRef) body = '<p>進度已經同步在你的 Claude 帳號，換裝置會自動接續，不需要另外登入。</p><div class="actions"><button class="btn" data-close-sheet="1">完成</button></div>';
+  else if (cmp) body = '<p>帳號「' + esc(cmp.name) + '」在雲端已經有進度，這個瀏覽器也有進度。要用哪一份？另一份會被取代。</p>' +
+    '<div class="acct-cmp"><div><b>雲端</b><span>見過 ' + seenN(cmp.data) + ' 題・作答 ' + ((cmp.data && cmp.data.tot && cmp.data.tot.a) || 0) + ' 次</span><span class="muted">更新於 ' + whenTxt(cmp.t) + '</span></div>' +
+    '<div><b>這個瀏覽器</b><span>見過 ' + seenN(S) + ' 題・作答 ' + S.tot.a + ' 次</span><span class="muted">更新於 ' + whenTxt(S.t) + '</span></div></div>' +
+    '<div class="actions"><button class="btn primary" data-acct-use="cloud">使用雲端進度</button><button class="btn" data-acct-use="local">用這個瀏覽器的進度</button><button class="btn ghost" data-close-sheet="1">取消</button></div>';
+  else if (ACCT) body = '<p>已登入帳號「<b>' + esc(ACCT) + '</b>」。在其他瀏覽器或手機輸入同一個帳號名稱就能接續進度。</p>' +
+    '<p class="muted" style="font-size:14px">上次同步：' + whenTxt(acctAt) + '。超過 ' + ACCT_DAYS + ' 天沒有開啟練習，帳號和雲端進度會自動刪除。</p>' +
+    '<div class="actions"><button class="btn primary" data-acct-sync="1">立即同步</button><button class="btn" data-acct-out="1">登出</button><button class="btn ghost" data-acct-del="1">刪除帳號</button></div>';
+  else body = '<p>不用密碼：建立帳號後，在其他瀏覽器或手機輸入同一個帳號名稱，就能接續同一份進度。</p>' +
+    '<p class="muted" style="font-size:14px">知道名稱的人也能讀寫這份進度，請取一個別人不容易想到的名稱（2–20 字）。超過 ' + ACCT_DAYS + ' 天沒有開啟練習，帳號會自動刪除。</p>' +
+    '<input class="acct-in" id="acctName" maxlength="20" autocomplete="username" placeholder="帳號名稱" aria-label="帳號名稱">' +
+    '<div class="actions"><button class="btn primary" data-acct-reg="1">建立新帳號</button><button class="btn" data-acct-in="1">登入</button><button class="btn ghost" data-close-sheet="1">取消</button></div>';
+  $('#layer').innerHTML = '<div class="scrim" data-close="1"><div class="sheet" role="dialog" aria-modal="true" aria-label="帳號與同步"><h3>帳號與同步</h3>' + body +
+    '<p class="acct-msg' + (bad ? ' bad' : '') + '" role="status">' + (msg ? esc(msg) : '') + '</p></div></div>';
+  const f = $('#acctName'); if (f) f.focus();
+}
+let acctPending = null, acctBusy = false;
+async function acctAction(d){
+  if (acctBusy) return; acctBusy = true;
+  try {
+    if (d.acctReg || d.acctIn) {
+      const el = $('#acctName'), name = el ? el.value.normalize('NFKC').trim().replace(/\s+/g, ' ') : '';
+      if ([...name].length < 2) return acctSheet('帳號名稱需為 2–20 個字', true);
+      if (d.acctReg) {
+        const r = await api('register', {name, data:S});
+        if (r.status === 409) return acctSheet('「' + name + '」已經有人使用。如果是你自己的帳號，請按「登入」。', true), $('#acctName').value = name;
+        if (r.status !== 200) return acctSheet(r.error || '建立失敗，請稍後再試', true), $('#acctName').value = name;
+        setAcct(r.name); acctAt = Date.now(); acctLabel(); acctSheet('帳號已建立，這個瀏覽器的進度已上傳。');
+      } else {
+        const r = await api('pull', {name});
+        if (r.status === 404) return acctSheet('找不到「' + name + '」。可能打錯字，或超過 ' + ACCT_DAYS + ' 天沒使用已被刪除。', true), $('#acctName').value = name;
+        if (r.status !== 200) return acctSheet(r.error || '登入失敗，請稍後再試', true), $('#acctName').value = name;
+        const remote = seenN(r.data) || (r.data && r.data.tot && r.data.tot.a), local = seenN(S) || S.tot.a;
+        if (remote && local && r.t !== S.t) { acctPending = r; return acctSheet('', false, r); }
+        setAcct(r.name); acctAt = Date.now();
+        if (remote) useRemote(r.data); else await acctPush(true);
+        acctLabel(); acctSheet('已登入，進度已同步。');
+      }
+    } else if (d.acctUse && acctPending) {
+      const r = acctPending; acctPending = null;
+      setAcct(r.name); acctAt = Date.now();
+      if (d.acctUse === 'cloud') useRemote(r.data); else { S.t = Date.now(); try { localStorage.setItem(LS, JSON.stringify(S)); } catch(e) {} await acctPush(true); }
+      acctLabel(); acctSheet('已登入，進度已同步。');
+    } else if (d.acctSync) { await acctPull(); if (ACCT) acctSheet('已同步。'); else closeLayer(); }
+    else if (d.acctOut) { setAcct(null); acctLabel(); acctSheet('已登出。這個瀏覽器的進度仍保留在本機。'); }
+    else if (d.acctDel) {
+      const b = $('[data-acct-del]');
+      if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = '再按一次確認刪除雲端帳號'; b.classList.add('warn'); return; }
+      const r = await api('delete', {name:ACCT});
+      if (r.status !== 200) return acctSheet(r.error || '刪除失敗，請稍後再試', true);
+      setAcct(null); acctLabel(); acctSheet('雲端帳號已刪除。這個瀏覽器的進度仍保留在本機。');
+    }
+  } finally { acctBusy = false; }
+}
+document.addEventListener('visibilitychange', () => {
+  if (!ACCT || dbRef) return;
+  if (document.visibilityState === 'visible') { if (!R) acctPull(); }
+  else if (saveT) { clearTimeout(saveT); saveT = null; acctPush(true, true); }
+});
 async function cloud(tries){
   const c = window.claude;
   if (!c || !c.use) { if (tries < 3) setTimeout(() => cloud(tries+1), 800); return; }
@@ -1081,7 +1193,7 @@ function achHTML(){
       '<p class="muted" style="font-size:13px;margin:-4px 0 0">套用在回路練習、今日送電、概念練習、數字特訓、耐壓試驗、閃電搶修。「曾錯」是錯過且還沒熟練的題目，錯越多次越容易抽到；「已答對」以到期該複習的優先。某一類題目不夠時，依「未練習 → 曾錯 → 已答對」的順序補滿。錯題重修只出錯題。</p>' +
       '<label><input type="checkbox" id="optExamBoost"' + (S.opt.examBoost ? ' checked' : '') + '> 模擬考加權錯題（預設關閉，維持跟正式考試一樣隨機，分數才準）</label>' +
       '<div class="actions" style="margin-top:0"><button class="btn" data-skinopen="1">更換配色（目前：' + (curSkin() === 'auto' ? '自動' : SKINS[curSkin()].name) + '）</button><button class="btn" data-reset="1" id="resetBtn">清除全部進度</button></div>' +
-      '<p class="muted" style="font-size:13px">題庫：勞動部技能檢定中心 007002A15（V115071315，115 年 1 月 1 日起適用），共 862 題，扣除 7 題刪題後 ' + QS.length + ' 題。詳解由 AI 依官方答案撰寫，僅供參考；其中 40 處疑點已對照用戶用電設備裝置規則（114.05.09）等法規查證，標示「題目疑似誤植」「答案有爭議」的題目，考試仍依官方答案作答。進度' + (dbRef ? '同步在你的帳號，換裝置也會接續。' : '存在這個瀏覽器。') + '</p>' +
+      '<p class="muted" style="font-size:13px">題庫：勞動部技能檢定中心 007002A15（V115071315，115 年 1 月 1 日起適用），共 862 題，扣除 7 題刪題後 ' + QS.length + ' 題。詳解由 AI 依官方答案撰寫，僅供參考；其中 40 處疑點已對照用戶用電設備裝置規則（114.05.09）等法規查證，標示「題目疑似誤植」「答案有爭議」的題目，考試仍依官方答案作答。進度' + (dbRef ? '同步在你的帳號，換裝置也會接續。' : ACCT ? '同步在帳號「' + esc(ACCT) + '」，換瀏覽器輸入同一個帳號名稱就會接續（' + ACCT_DAYS + ' 天沒使用會自動刪除）。' : '存在這個瀏覽器。按右上角「本機儲存」可以建立帳號，在不同瀏覽器之間同步。') + '</p>' +
     '</div>';
 }
 
@@ -1246,6 +1358,8 @@ document.addEventListener('click', e => {
   if (d.noteBook) { closeLayer(); BK = {ch:'', f:'all', s:'', hide:BK.hide, n:30, note:d.noteBook}; setTab('book'); return; }
   if (d.nf) { NF = d.nf; render(); return; }
   if (d.clearNote) { BK.note = ''; BK.fx = ''; BK.n = 30; render(); return; }
+  if (d.acct) { acctSheet(); return; }
+  if (d.acctReg || d.acctIn || d.acctUse || d.acctSync || d.acctOut || d.acctDel) { acctAction(d); return; }
   if (d.skinopen) { skinSheet(); return; }
   if (d.skinPick) { applySkin(d.skinPick, true); skinSheet(); return; }
   if (d.closeSheet) { closeLayer(); return; }
@@ -1270,6 +1384,7 @@ let bkT = null;
 document.addEventListener('input', e => { if (e.target.id === 'fxS') { clearTimeout(bkT); bkT = setTimeout(() => { FX.q = e.target.value; factsList(); }, 200); return; } if (e.target.id === 'bkS') { clearTimeout(bkT); bkT = setTimeout(() => { BK.s = e.target.value; BK.n = 30; bookList(); }, 200); } });
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && $('#layer').innerHTML) { closeLayer(); return; }
+  if (e.key === 'Enter' && e.target.id === 'acctName') { e.preventDefault(); acctAction({acctIn:'1'}); return; }
   if (!R || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
   if (/^[1-4]$/.test(e.key)) { e.preventDefault(); choose(+e.key - 1); }
   else if (e.key === 'Enter') {
@@ -1287,6 +1402,7 @@ if (S.opt.skin && S.opt.skin !== curSkin()) applySkin(S.opt.skin, false);
 checkAch(); pendingAch = [];
 header(); render();
 cloud(0);
+acctLabel(); acctPull();
 })();
 </script>
 
