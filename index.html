@@ -310,21 +310,6 @@ sup,sub{font-size:.72em;line-height:0}
 .settings{display:grid;gap:10px;margin-top:10px;max-width:640px}
 .settings label{display:flex;gap:10px;align-items:center}
 
-/* ---------- MDA ---------- */
-.mda-intro{max-width:68ch}
-.mda{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-block:16px}
-@media (max-width:820px){.mda{grid-template-columns:1fr}}
-.mda section{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;min-width:0}
-.mda h3{font-size:16px;display:flex;align-items:baseline;gap:8px}
-.mda h3 .mono{font-size:11px;color:var(--muted)}
-.mda ul{margin:10px 0 0;padding-left:18px;display:grid;gap:8px;font-size:14px}
-.chain{display:grid;gap:8px;margin-top:8px}
-.chain .row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-size:14px}
-@media (max-width:820px){.chain .row{grid-template-columns:1fr}}
-.chain .row div{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px;min-width:0}
-.chain .row div:first-child{border-left:4px solid var(--fill)}
-.chain .hdr div{background:transparent;border:0;font-family:var(--f-mono);font-size:11px;color:var(--muted);padding-block:0}
-.chain .hdr div:first-child{border:0}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 18px;border-radius:999px;font-weight:700;z-index:40;box-shadow:0 6px 20px rgba(0,0,0,.25);max-width:calc(100% - 32px)}
 .sheet.wide{width:min(760px,100%)}
 .notes{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}
@@ -447,7 +432,6 @@ body{padding-bottom:72px}
     <button class="tab" role="tab" data-tab="facts" aria-selected="false">數字速查</button>
     <button class="tab" role="tab" data-tab="ach" aria-selected="false">等級與成就</button>
     <button class="tab" role="tab" data-tab="board" aria-selected="false">風雲榜</button>
-    <button class="tab" role="tab" data-tab="mda" aria-selected="false">設計藍圖 MDA</button>
   </nav>
 
   <main id="view"></main>
@@ -898,7 +882,6 @@ function render(){
   else if (TAB === 'notes') v.innerHTML = notesHTML();
   else if (TAB === 'facts') { v.innerHTML = factsShell(); factsList(); }
   else if (TAB === 'ach') v.innerHTML = achHTML();
-  else if (TAB === 'mda') v.innerHTML = mdaHTML();
   else if (TAB === 'board') { v.innerHTML = boardHTML(); loadBoard(); }
 }
 
@@ -1233,28 +1216,6 @@ function achHTML(){
     '</div>';
 }
 
-/* ---- MDA ---- */
-function mdaHTML(){
-  const rows = [
-    ['挑戰：在 100 分鐘內穩定拿到 60 分以上','愛心讓人不亂猜；連擊加成讓人想維持手感','5 顆愛心（答錯扣一顆，用完結束；連對 3 題補一顆）、連擊倍率 ×1～×3（3、6、10 連擊升級）'],
-    ['掌握感：看得到自己在進步','弱點題自動回來，熟練後退場；回路一個個點亮','Leitner 6 格間隔（1 分、10 分、1 天、3 天、7 天、16 天）、熟練＝連對 3 次、出題比例 未練習 5：曾錯 3：已答對 2（錯越多次越常出）、回路 80% 投入'],
-    ['幻想：從學徒做到技術士，替整棟大樓送電','每次練習都在「送電」，等級名稱與真實證照對應','受電盤、NFB 分路、RL/GL 指示燈、等級：學徒→助手→丙級→乙級→甲級→電機技師'],
-    ['探索：19 個工作項目都想點亮','自己選回路，從冷門回路找突破；從錯題跳到重點筆記，再回到同概念的題目','主匯流排 19 個燈位、回路熟練度刻度、題庫篩選（答錯過、未熟練、未作答、複選）'],
-    ['緊張與成就：有考試的臨場感','全範圍抽查、正式規格模擬、關卡驗收','全盤巡檢 19 個工作項目各 1 題＋最弱回路 1 題（共 20 題，立即詳解、巡檢報告）、模擬考 60 單＋20 複／100 分鐘、耐壓試驗 15 題需 80%'],
-    ['習慣：每天回來一點點','今日目標與連續天數形成小儀式，到期題目提醒回來','今日送電（到期題＋最弱 4 回路）、每日 30 題 +50 積分、連續天數、12 個成就']
-  ];
-  return '<div class="mda-intro"><h2 style="font-size:22px;margin-bottom:8px">設計藍圖：MDA 架構</h2>' +
-    '<p>MDA（Mechanics–Dynamics–Aesthetics，Hunicke、LeBlanc、Zubek，2004）把遊戲拆成三層。設計者從<b>機制</b>往上做，玩家從<b>美感</b>往下感受。這個練習器先決定考生要得到什麼感受，再倒推需要什麼互動動態，最後才定規則與數字。</p></div>' +
-    '<div class="mda">' +
-      '<section><h3>A 美感 <span class="mono">AESTHETICS</span></h3><p class="muted" style="font-size:14px">考生想要的感受</p><ul><li><b>挑戰</b>（主）：考試有門檻，練到穩定過關</li><li><b>幻想</b>：電工替大樓送電的身分</li><li><b>探索</b>：19 個工作項目逐一攻克</li><li><b>習慣儀式</b>：每天短短一輪也有收穫</li></ul></section>' +
-      '<section><h3>D 動態 <span class="mono">DYNAMICS</span></h3><p class="muted" style="font-size:14px">規則跑起來後產生的行為</p><ul><li>心流循環：10 題一回合，立即回饋，馬上下一輪</li><li>風險控管：愛心讓考生想清楚再答，連對又能補回來</li><li>間隔重複：錯題自然回流，熟題自然退場</li><li>可見目標：回路燈一盞盞亮，進度一眼看到</li><li>自主選擇：自己挑回路、挑模式</li></ul></section>' +
-      '<section><h3>M 機制 <span class="mono">MECHANICS</span></h3><p class="muted" style="font-size:14px">實際寫進程式的規則</p><ul><li>積分：（單選 10、複選 15 ＋ 快答加分）× 連擊倍率；單選 10 秒、複選 20 秒內答對，依毫秒換算最多 +30</li><li>愛心 5 顆，連對 3 題補一顆；答錯的題在回合末再測一次</li><li>熟練格 0–3；回路熟練 ≥80% 投入送電</li><li>六種模式：回路練習、今日送電、錯題重修、耐壓試驗、全盤巡檢、模擬考</li><li>複選全對才算對，比照正式計分</li><li>答錯立即展開詳解，再到回合末重測同一題</li><li>重點筆記：跨章概念卡，連回相關題目與「概念練習」</li><li>內建計算機：作答中隨時開啟，支援 √、次方、三角函數與 Ans，計算題不用另外找工具</li><li>數字速查：同類規定數字並排比較，可遮住自測、答錯直接跳到對照表、分組「數字特訓」</li></ul></section>' +
-    '</div>' +
-    '<div class="sec-h"><h2>從感受倒推到規則</h2></div>' +
-    '<div class="chain"><div class="row hdr"><div>美感（目標）</div><div>動態（行為）</div><div>機制（規則）</div></div>' + rows.map(r => '<div class="row"><div>' + r[0] + '</div><div>' + r[1] + '</div><div>' + r[2] + '</div></div>').join('') + '</div>' +
-    '<div class="sec-h"><h2>刻意避開的設計</h2></div><ul style="max-width:68ch;display:grid;gap:6px;padding-left:18px">' +
-      '<li>不讓積分只靠刷量：重做熟題的時間會被「到期優先」的出題順序排到後面。</li><li>愛心只用在練習回合，模擬考與耐壓試驗不中斷，保留完整作答節奏。</li><li>答錯一定看到正解與詳解，並在回合末再測，讓懲罰立刻轉成理解，而不是只記住答案位置。</li><li>不排行、不比較他人，重點放在自己對題庫的熟練度。</li></ul>';
-}
 
 /* ================= calculator ================= */
 const CALC = {deg:true, ans:0, hist:[]};
