@@ -91,6 +91,14 @@ h1,h2,h3{text-wrap:balance;margin:0;line-height:1.25}
 .acct-cmp{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
 .acct-cmp>div{border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:14px;display:grid;gap:2px}
 .acct-cmp b{font-size:15px}
+.lb{list-style:none;padding:0;margin:14px 0 8px;display:grid;gap:6px;max-width:520px}
+.lb li{display:grid;grid-template-columns:40px 1fr auto;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 14px}
+.lb .rk{font-family:var(--f-num);font-weight:700;font-size:18px;color:var(--muted);text-align:center}
+.lb li.top1 .rk,.lb li.top2 .rk,.lb li.top3 .rk{color:var(--accent-ink);background:var(--accent-soft);border-radius:999px;line-height:30px}
+.lb b{font-family:var(--f-num);font-size:18px}
+.lb em{font-style:normal;color:var(--muted);font-size:13px}
+.lb li.me{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}
+.lb li.gap{background:transparent;border:0;padding:0;display:block;text-align:center;color:var(--muted)}
 .tabs{display:flex;gap:4px;margin-block:12px 18px;overflow-x:auto}
 .tab{border:0;background:transparent;padding:8px 14px;border-radius:6px;cursor:pointer;color:var(--muted);font-weight:500;white-space:nowrap}
 .tab[aria-selected="true"]{background:var(--tab-active-bg);color:var(--tab-active-fg)}
@@ -440,6 +448,7 @@ body{padding-bottom:72px}
     <button class="tab" role="tab" data-tab="notes" aria-selected="false">重點筆記</button>
     <button class="tab" role="tab" data-tab="facts" aria-selected="false">數字速查</button>
     <button class="tab" role="tab" data-tab="ach" aria-selected="false">等級與成就</button>
+    <button class="tab" role="tab" data-tab="board" aria-selected="false">風雲榜</button>
     <button class="tab" role="tab" data-tab="mda" aria-selected="false">設計藍圖 MDA</button>
   </nav>
 
@@ -492,9 +501,14 @@ const ACH = [
 
 /* ================= state & storage ================= */
 const LS = 'yiji-songdian-v1';
-function fresh(){ return {v:1,t:0,xp:0,hist:[],q:{},boss:{},ach:{},day:{d:'',streak:0,n:0,goal:''},best:{blitz:0,exam:0},tot:{a:0,c:0},opt:{shuffle:true,boost:1,examBoost:false}}; }
+function fresh(){ return {v:1,t:0,xp:0,hist:[],dx:{},q:{},boss:{},ach:{},day:{d:'',streak:0,n:0,goal:''},best:{blitz:0,exam:0},tot:{a:0,c:0},opt:{shuffle:true,boost:1,examBoost:false}}; }
 function adopt(d){ const f = fresh(); const s = Object.assign(f, JSON.parse(JSON.stringify(d||{})));
-  ['day','best','tot','opt'].forEach(k => s[k] = Object.assign(fresh()[k], s[k]||{})); return s; }
+  ['day','best','tot','opt'].forEach(k => s[k] = Object.assign(fresh()[k], s[k]||{}));
+  if (!d || !d.dx) s.dx = dxFromHist(s.hist); return s; }
+// 每日積分（風雲榜 7 天累計用）；舊資料沒有這欄時，從回合紀錄推算最近 7 天
+function dxFromHist(h){ const dx = {}, from = Date.now() - 7*864e5; (h||[]).forEach(r => { if (r.t >= from && r.xp > 0) { const k = dstr(new Date(r.t)); dx[k] = (dx[k]||0) + r.xp; } }); return dx; }
+function addXP(n){ S.xp += n; const k = dstr(new Date()), dx = S.dx = S.dx || {}; dx[k] = (dx[k]||0) + n;
+  const keep = new Set(Array.from({length:8}, (_, i) => dstr(new Date(Date.now() - i*864e5)))); Object.keys(dx).forEach(d => { if (!keep.has(d)) delete dx[d]; }); }
 let S = fresh();
 try { const r = localStorage.getItem(LS); if (r) S = adopt(JSON.parse(r)); } catch(e) {}
 let dbRef = null, saving = false, again = false, saveT = null;
@@ -522,7 +536,7 @@ async function api(op, body, keepalive){
     return Object.assign({}, j, {status:r.status});
   } catch(e) { return {status:0, error:'連不上網路'}; }
 }
-function setAcct(n){ ACCT = n; try { n ? localStorage.setItem(LSA, n) : localStorage.removeItem(LSA); } catch(e) {} }
+function setAcct(n){ ACCT = n; LBV.at = 0; try { n ? localStorage.setItem(LSA, n) : localStorage.removeItem(LSA); } catch(e) {} }
 function acctLabel(){ if (dbRef) return; setSync(ACCT ? '☁ ' + ACCT : '本機儲存'); }
 function useRemote(d){
   S = adopt(d); try { localStorage.setItem(LS, JSON.stringify(S)); } catch(e) {}
@@ -796,7 +810,7 @@ function record(q, ok){
   const t = dstr(new Date());
   if (S.day.d !== t) { const y = new Date(); y.setDate(y.getDate()-1); S.day.streak = S.day.d === dstr(y) ? S.day.streak + 1 : 1; S.day.d = t; S.day.n = 0; }
   S.day.n++;
-  if (S.day.n >= 30 && S.day.goal !== t) { S.day.goal = t; S.xp += 50; if (R) R.xp += 50; unlock('goal'); }
+  if (S.day.n >= 30 && S.day.goal !== t) { S.day.goal = t; addXP(50); if (R) R.xp += 50; unlock('goal'); }
 }
 function choose(pos){
   if (!R || R.phase !== 'ask') return;
@@ -814,7 +828,7 @@ function submit(){
   let gain = 0;
   if (ok) {
     R.combo++; R.maxCombo = Math.max(R.maxCombo, R.combo);
-    if (!isRe) { R.ok++; R.pts += it.q.multi ? 2 : 1; const ms = performance.now() - (R.qAt || performance.now()), sec = ms / 1000, sb = spBonus(it.q, ms); R.lastSpd = {sec, sb}; gain = Math.round(((it.q.multi ? 15 : 10) + sb) * volt(R.combo).m); R.xp += gain; S.xp += gain; }
+    if (!isRe) { R.ok++; R.pts += it.q.multi ? 2 : 1; const ms = performance.now() - (R.qAt || performance.now()), sec = ms / 1000, sb = spBonus(it.q, ms); R.lastSpd = {sec, sb}; gain = Math.round(((it.q.multi ? 15 : 10) + sb) * volt(R.combo).m); R.xp += gain; addXP(gain); }
     if (R.combo >= 10) unlock('combo10'); R.healed = false; if (R.fuses !== null && R.combo % HEAL_EVERY === 0 && R.fuses < R.M.fuses) { R.fuses++; R.healed = true; }
   } else {
     R.combo = 0; R.healed = false;
@@ -849,11 +863,11 @@ function finish(reason){ clearCd();
       if (ok) { r.ok++; sc += it.q.multi ? 2 : 1; }
       const p = per[it.q.c] || (per[it.q.c] = [0,0]); p[1]++; if (ok) p[0]++; });
     r.score = sc; r.per = per;
-    const gain = sc * 5; r.xp += gain; S.xp += gain;
+    const gain = sc * 5; r.xp += gain; addXP(gain);
     S.best.exam = Math.max(S.best.exam, sc);
     if (sc >= 60) unlock('exam60'); if (sc >= 90) unlock('exam90');
   }
-  if (r.mode === 'boss') { const p = r.ok / r.items.length; r.pct = p; S.boss[r.arg] = Math.max(S.boss[r.arg] || 0, p); if (p >= .8) { r.xp += 100; S.xp += 100; } }
+  if (r.mode === 'boss') { const p = r.ok / r.items.length; r.pct = p; S.boss[r.arg] = Math.max(S.boss[r.arg] || 0, p); if (p >= .8) { r.xp += 100; addXP(100); } }
   if (r.mode === 'blitz') { r.prevBest = S.best.blitz; S.best.blitz = Math.max(S.best.blitz, r.pts); if (r.pts >= 15) unlock('blitz15'); }
   unlock('first'); checkAch();
   const lab = r.M.label + (r.mode === 'fx' ? '・' + (r.arg === '*' ? '全部數字' : r.arg) : r.mode === 'note' ? '・' + NOTEM[r.arg].title : (r.arg && CHM[r.arg] ? '・' + CHM[r.arg].name : ''));
@@ -895,6 +909,35 @@ function render(){
   else if (TAB === 'facts') { v.innerHTML = factsShell(); factsList(); }
   else if (TAB === 'ach') v.innerHTML = achHTML();
   else if (TAB === 'mda') v.innerHTML = mdaHTML();
+  else if (TAB === 'board') { v.innerHTML = boardHTML(); loadBoard(); }
+}
+
+/* ---- 風雲榜：7 天累計積分／歷史總分；榜上只顯示遮罩名稱 ---- */
+const LBV = {f:'week', d:null, at:0, busy:false, err:''};
+function boardRows(b){
+  if (!b || !b.top.length) return '<p class="muted">' + (LBV.f === 'week' ? '最近 7 天還沒有人拿到積分。' : '還沒有人上榜。') + '</p>';
+  const row = x => '<li class="' + (x.me ? 'me' : '') + (x.r <= 3 ? ' top' + x.r : '') + '"><span class="rk">' + x.r + '</span><span class="nm">' + esc(x.m) + (x.me ? ' <em>（你）</em>' : '') + '</span><b>' + x.s.toLocaleString() + '</b></li>';
+  return '<ol class="lb">' + b.top.map(row).join('') + (b.me ? '<li class="gap" aria-hidden="true">⋯</li>' + row(b.me) : '') + '</ol><p class="muted" style="font-size:13px">共 ' + b.n + ' 人上榜</p>';
+}
+function boardHTML(){
+  const d = LBV.d, b = d && d[LBV.f];
+  const seg = [['week','7 天累計'],['total','歷史總分']].map(x => '<button data-lb="' + x[0] + '" aria-pressed="' + (LBV.f === x[0]) + '">' + x[1] + '</button>').join('');
+  const note = ACCT ? '你以「' + esc([...ACCT][0]) + '○○」上榜。為了不讓別人看榜就登入你的帳號，榜上只顯示帳號名稱的第一個字。'
+    : '目前進度只存在這個瀏覽器，不會上榜。按右上角「本機儲存」建立帳號就能上榜（榜上只顯示帳號名稱的第一個字）。';
+  return '<div class="sec-h" style="margin-top:0"><h2>風雲榜</h2><span class="muted" style="font-size:13px">' + (LBV.f === 'week' ? '最近 7 天（含今天）拿到的積分' : '帳號累計的全部積分') + '</span></div>' +
+    '<div class="nfilter">' + seg + '</div>' +
+    '<div id="lbBody">' + (LBV.err ? '<p class="muted">' + esc(LBV.err) + '</p>' : d ? boardRows(b) : '<p class="muted">載入中…</p>') + '</div>' +
+    '<p class="muted" style="font-size:13px;max-width:68ch">' + note + ' 超過 30 天沒有練習的帳號會自動刪除並從榜上移除。</p>';
+}
+async function loadBoard(force){
+  if (LBV.busy || (!force && LBV.d && Date.now() - LBV.at < 30000)) return;
+  LBV.busy = true;
+  if (ACCT && saveT) { clearTimeout(saveT); await flush(); }   // 先把自己的最新積分送上去
+  const r = await api('board', {name: ACCT || ''});
+  LBV.busy = false;
+  if (r.status === 200) { LBV.d = r; LBV.at = Date.now(); LBV.err = ''; }
+  else LBV.err = r.status === 0 ? '連不上網路，稍後再試。' : (r.error || '風雲榜暫時無法載入。');
+  if (TAB === 'board' && !R) render();
 }
 
 function homeHTML(){
@@ -1360,6 +1403,7 @@ document.addEventListener('click', e => {
   if (d.clearNote) { BK.note = ''; BK.fx = ''; BK.n = 30; render(); return; }
   if (d.acct) { acctSheet(); return; }
   if (d.acctReg || d.acctIn || d.acctUse || d.acctSync || d.acctOut || d.acctDel) { acctAction(d); return; }
+  if (d.lb) { LBV.f = d.lb; render(); return; }
   if (d.skinopen) { skinSheet(); return; }
   if (d.skinPick) { applySkin(d.skinPick, true); skinSheet(); return; }
   if (d.closeSheet) { closeLayer(); return; }
