@@ -167,15 +167,6 @@ h1,h2,h3{text-wrap:balance;margin:0;line-height:1.25}
 .qbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .qbar .label{font-weight:700;margin-right:auto}
 .fuses{display:flex;gap:4px}
-.cdown{position:fixed;inset:0;display:grid;place-items:center;pointer-events:none;z-index:35;font-family:var(--f-num);font-size:min(45vw,240px);font-weight:700;color:var(--bad);opacity:.2}
-.cdown.go{animation:cdpulse 1s ease-out forwards}
-@keyframes cdpulse{0%{opacity:.45;transform:scale(1.08)}100%{opacity:.15;transform:scale(1)}}
-.endcap{position:fixed;inset:0;display:grid;place-items:center;z-index:40;background:color-mix(in srgb,var(--bg) 72%,transparent);animation:capin .3s ease-out}
-.endcap>div{background:var(--surface);border:2px solid var(--ink);border-radius:14px;padding:24px 32px;display:grid;gap:8px;justify-items:center;box-shadow:0 10px 32px rgba(0,0,0,.25);text-align:center}
-.endcap b{font-size:40px;font-weight:900;color:var(--bad)}
-.endcap .big{font-family:var(--f-num);font-size:32px;font-weight:700;color:var(--ink)}
-.endcap .muted{font-size:14px}
-@keyframes capin{from{opacity:0}}
 .hchart{background:var(--card-bg);border:1px solid var(--card-border);border-radius:10px;padding:8px;margin-bottom:10px}
 .hchart svg{width:100%;height:auto;display:block}
 .hchart .ax{stroke:var(--line);stroke-width:1}
@@ -433,6 +424,13 @@ body{padding-bottom:72px}
 .skin .sw i:first-child{flex:2}
 .skin b{font-size:15px}
 .skin span{font-size:12px;color:var(--muted);line-height:1.5}
+.sweep{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:6px;margin:12px 0 4px}
+.sweep>*{display:flex;font:inherit;color:inherit;text-align:left;gap:8px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--surface);font-size:14px}
+.sweep i{flex:none;width:12px;height:12px;border-radius:50%;background:var(--ok)}
+.sweep .x{border-color:var(--bad);background:var(--bad-bg);cursor:pointer}
+.sweep .x .go{margin-left:auto;font-size:12px;color:var(--bad);font-weight:700;white-space:nowrap}
+.sweep .x i{background:var(--bad)}
+.sweep .mono{color:var(--muted)}
 </style>
 <script>try{var k=localStorage.getItem('yiji-skin');if(k&&k!=='auto')document.documentElement.setAttribute('data-skin',k)}catch(e){}</script>
 
@@ -491,7 +489,7 @@ const ACH = [
   ['brkAll','全棟送電','19 個回路全部投入','19'],
   ['boss1','耐壓合格','通過任一回路的耐壓試驗','kV'],
   ['bossAll','全盤耐壓','19 個耐壓試驗全部合格','AC'],
-  ['blitz15','閃電搶修手','閃電搶修 60 秒內拿到 15 分','60'],
+  ['sweep18','全盤巡檢員','全盤巡檢 20 題答對 18 題以上','18'],
   ['exam60','學科及格','模擬考 60 分以上','60'],
   ['exam90','高分過關','模擬考 90 分以上','90'],
   ['streak7','連續一週','連續 7 天都有練習','7d'],
@@ -501,7 +499,7 @@ const ACH = [
 
 /* ================= state & storage ================= */
 const LS = 'yiji-songdian-v1';
-function fresh(){ return {v:1,t:0,xp:0,hist:[],dx:{},q:{},boss:{},ach:{},day:{d:'',streak:0,n:0,goal:''},best:{blitz:0,exam:0},tot:{a:0,c:0},opt:{shuffle:true,boost:1,examBoost:false}}; }
+function fresh(){ return {v:1,t:0,xp:0,hist:[],dx:{},q:{},boss:{},ach:{},day:{d:'',streak:0,n:0,goal:''},best:{blitz:0,exam:0,sweep:0},tot:{a:0,c:0},opt:{shuffle:true,boost:1,examBoost:false}}; }
 function adopt(d){ const f = fresh(); const s = Object.assign(f, JSON.parse(JSON.stringify(d||{})));
   ['day','best','tot','opt'].forEach(k => s[k] = Object.assign(fresh()[k], s[k]||{}));
   if (!d || !d.dx) s.dx = dxFromHist(s.hist); return s; }
@@ -754,7 +752,7 @@ const MODES = {
   note:{label:'概念練習', fuses:HEARTS, feedback:true},
   fx:{label:'數字特訓', fuses:HEARTS, feedback:true},
   boss:{label:'耐壓試驗', fuses:null, feedback:true},
-  blitz:{label:'閃電搶修', fuses:null, feedback:true, secs:60},
+  sweep:{label:'全盤巡檢', fuses:null, feedback:true},
   exam:{label:'模擬考', fuses:null, feedback:false, secs:100*60}
 };
 function makeItem(q){ const ord = [0,1,2,3]; if (S.opt.shuffle && !/[①②③④]|以上皆|以上均/.test(q.o.join(''))) shuffle(ord); return {q, ord, sel:new Set(), done:false, ok:null, w0:st(q.k)[2], isNew:!S.q[q.k]}; }
@@ -766,7 +764,7 @@ function start(mode, arg){
   else if (mode === 'fx') list = pick(fxKeys(arg).map(k => QK[k]).filter(Boolean), 10);
   else if (mode === 'review') { const pool = (arg ? BY[arg] : QS).filter(q => { const s = S.q[q.k]; return s && s[2] > 0 && s[0] < 3; }); list = shuffle(pool.sort((a,b) => st(a.k)[0] - st(b.k)[0]).slice(0, 12)); }
   else if (mode === 'boss') list = pick(BY[arg], 15);
-  else if (mode === 'blitz') list = pick(QS, 120);
+  else if (mode === 'sweep') list = sweepList();
   else if (mode === 'exam') { const b = S.opt.examBoost, s = wpick(QS.filter(q => !q.multi), 60, b), m = wpick(QS.filter(q => q.multi), 20, b); list = shuffle(s).concat(shuffle(m)); }
   if (!list.length) { toast(mode === 'review' ? '這裡沒有待重修的錯題' : '沒有可出的題目'); return; }
   const M = MODES[mode];
@@ -776,28 +774,21 @@ function start(mode, arg){
   clearInterval(tick); if (R.endAt) tick = setInterval(onTick, 250);
   renderQuiz();
 }
-function clearCd(){ const c = document.getElementById('cdown'); if (c) c.remove(); }
-function blitzCountdown(left){
-  const s = Math.ceil(left / 1000); let c = document.getElementById('cdown');
-  if (left > 0 && s <= 5) {
-    if (!c) { c = document.createElement('div'); c.id = 'cdown'; c.className = 'cdown'; c.setAttribute('aria-live', 'assertive'); document.body.appendChild(c); }
-    if (c.textContent !== String(s)) { c.textContent = s; c.classList.remove('go'); void c.offsetWidth; c.classList.add('go'); }
-  } else if (c) c.remove();
-}
-function blitzEnd(){
-  R.phase = 'over'; clearCd();
-  const el = document.createElement('div'); el.className = 'endcap'; el.setAttribute('role', 'alertdialog');
-  el.innerHTML = '<div><b>時間到！</b><span class="big">' + R.pts + ' 分</span><span class="muted">答對 ' + R.ok + ' 題・最高 ' + R.maxCombo + ' 連擊</span><button class="btn primary" id="endGo" style="margin-top:6px">看結果</button></div>';
-  document.body.appendChild(el);
-  const go = () => { if (!el.isConnected) return; el.remove(); if (R && R.phase === 'over') finish('done'); };
-  el.querySelector('#endGo').addEventListener('click', go); setTimeout(go, 3000);
+/* 全盤巡檢：先依出題比例（未練習：曾錯：已答對）排出一長串，再從中為 19 個工作項目各取第一題；
+   最後加 1 題給熟練度最低的回路。順序打亂，讓不同工作項目交錯出現。 */
+function sweepList(){
+  const seq = pick(QS, 120), got = new Map();
+  seq.forEach(q => { if (!got.has(q.c)) got.set(q.c, q); });
+  CH.forEach(c => { if (!got.has(c.id)) { const one = pick(BY[c.id], 1)[0]; if (one) got.set(c.id, one); } });
+  const list = [...got.values()], used = new Set(list);
+  for (const c of weakest(CH.length)) { const extra = pick(BY[c].filter(q => !used.has(q)), 1)[0]; if (extra) { list.push(extra); break; } }
+  return shuffle(list);
 }
 function onTick(){
   if (!R) { clearInterval(tick); return; }
   const left = Math.max(0, R.endAt - Date.now()); const el = $('#timer');
   if (el) { const s = Math.ceil(left/1000); el.textContent = Math.floor(s/60) + ':' + pad(s%60); el.classList.toggle('low', s <= (R.mode === 'exam' ? 300 : 10)); }
-  if (R.mode === 'blitz') blitzCountdown(left);
-  if (left <= 0) { clearInterval(tick); if (R.mode === 'blitz') blitzEnd(); else finish(R.mode === 'exam' ? 'time' : 'done'); }
+  if (left <= 0) { clearInterval(tick); finish(R.mode === 'exam' ? 'time' : 'done'); }
 }
 function cur(){ return R.items[R.i]; }
 function same(a, b){ return a.length === b.length && a.every((x,i) => x === b[i]); }
@@ -833,7 +824,6 @@ function submit(){
   } else {
     R.combo = 0; R.healed = false;
     if (R.fuses !== null) R.fuses--;
-    if (R.mode === 'blitz') R.endAt -= 3000;
     if (R.M.fuses !== null && !isRe && R.fuses > 0) { const re = makeItem(it.q); R.requeued.add(re); R.items.push(re); }
     const t = $('#trip'); t.classList.remove('go'); void t.offsetWidth; t.classList.add('go');
   }
@@ -842,7 +832,6 @@ function submit(){
   renderQuiz();
   document.body.classList.remove('flash-ok','flash-bad'); void document.body.offsetWidth;
   document.body.classList.add(ok ? 'flash-ok' : 'flash-bad');
-  if (R.mode === 'blitz') setTimeout(() => { if (R && R.phase === 'shown' && R.items[R.i] === it) next(); }, ok ? 380 : (it.q.multi ? 1800 : 1100));
 }
 function next(){
   if (!R) return;
@@ -852,9 +841,9 @@ function next(){
   renderQuiz(); window.scrollTo({top:0});
 }
 function examGo(i){ R.i = Math.max(0, Math.min(R.items.length - 1, i)); R.confirmSubmit = false; renderQuiz(); }
-function quit(){ if (!R.confirmQuit) { R.confirmQuit = true; renderQuiz(); return; } clearInterval(tick); clearCd(); R = null; setTab('home'); }
+function quit(){ if (!R.confirmQuit) { R.confirmQuit = true; renderQuiz(); return; } clearInterval(tick); R = null; setTab('home'); }
 
-function finish(reason){ clearCd();
+function finish(reason){
   clearInterval(tick);
   const r = R; r.reason = reason;
   if (r.mode === 'exam') {
@@ -868,11 +857,12 @@ function finish(reason){ clearCd();
     if (sc >= 60) unlock('exam60'); if (sc >= 90) unlock('exam90');
   }
   if (r.mode === 'boss') { const p = r.ok / r.items.length; r.pct = p; S.boss[r.arg] = Math.max(S.boss[r.arg] || 0, p); if (p >= .8) { r.xp += 100; addXP(100); } }
-  if (r.mode === 'blitz') { r.prevBest = S.best.blitz; S.best.blitz = Math.max(S.best.blitz, r.pts); if (r.pts >= 15) unlock('blitz15'); }
+  if (r.mode === 'sweep') { const per = {}; r.items.forEach(it => { if (r.requeued.has(it)) return; const p = per[it.q.c] || (per[it.q.c] = [0,0]); p[1]++; if (it.ok) p[0]++; });
+    r.per = per; r.prevBest = S.best.sweep || 0; S.best.sweep = Math.max(r.prevBest, r.ok); if (r.ok >= 18) unlock('sweep18'); }
   unlock('first'); checkAch();
   const lab = r.M.label + (r.mode === 'fx' ? '・' + (r.arg === '*' ? '全部數字' : r.arg) : r.mode === 'note' ? '・' + NOTEM[r.arg].title : (r.arg && CHM[r.arg] ? '・' + CHM[r.arg].name : ''));
   const rec = {t:Date.now(), m:r.mode, l:lab, ok:r.ok, n:r.n, xp:r.xp, mc:r.maxCombo, sp: r.spN ? +(r.spT / r.spN / 1000).toFixed(2) : 0};
-  if (r.mode === 'exam') rec.sc = r.score + ' 分'; else if (r.mode === 'blitz') rec.sc = r.pts + ' 分'; else if (r.mode === 'boss') rec.sc = Math.round(r.pct * 100) + '%';
+  if (r.mode === 'exam') rec.sc = r.score + ' 分'; else if (r.mode === 'sweep') rec.sc = r.ok + ' / ' + r.n; else if (r.mode === 'boss') rec.sc = Math.round(r.pct * 100) + '%';
   if (reason === 'trip') rec.tr = 1;
   S.hist = (S.hist || []).concat([rec]).slice(-300);
   r.newOn = CH.filter(c => isOn(c.id) && !r.onBefore.includes(c.id)).map(c => c.id);
@@ -964,7 +954,7 @@ function homeHTML(){
     '</section>' +
     '<section class="modes">' +
       '<button class="mode hot" data-go="daily"><span class="ico">15</span><span><b>今日送電</b><span>' + (due ? due + ' 題到期複習，' : '') + '補最弱的 4 個回路</span></span><span class="go">開始</span></button>' +
-      '<button class="mode" data-go="blitz"><span class="ico">60s</span><span><b>閃電搶修</b><span>60 秒單複選連答，單選 1 分、複選 2 分，答錯扣 3 秒' + (S.best.blitz ? '・最佳 ' + S.best.blitz + ' 分' : '') + '</span></span><span class="go">開始</span></button>' +
+      '<button class="mode" data-go="sweep"><span class="ico">19</span><span><b>全盤巡檢</b><span>19 個工作項目各抽 1 題＋最弱回路 1 題，每題看詳解，結束出巡檢報告' + (S.best.sweep ? '・最佳 ' + S.best.sweep + '/20' : '') + '</span></span><span class="go">開始</span></button>' +
       '<button class="mode" data-go="exam"><span class="ico">80</span><span><b>模擬考</b><span>單選 60＋複選 20，100 分鐘，60 分及格' + (S.best.exam ? '・最佳 ' + S.best.exam + ' 分' : '') + '</span></span><span class="go">開始</span></button>' +
       '<button class="mode" data-go="review"' + (wrongs ? '' : ' disabled') + '><span class="ico">' + wrongs + '</span><span><b>錯題重修</b><span>' + (wrongs ? '答錯且還沒熟練的題目，每次 12 題' : '目前沒有待重修的錯題') + '</span></span><span class="go">開始</span></button>' +
     '</section></div>' +
@@ -1027,7 +1017,7 @@ function renderQuiz(){
   const vi = VOLTS.indexOf(volt(R.combo));
   const voltBar = exam ? '' : '<div class="volt" title="連續答對，積分倍率提高">' + VOLTS.map((x,i) => '<div class="' + (i <= vi ? 'lit' : '') + (i === vi ? ' cur' : '') + '"><span>' + (i ? x.at + ' 連擊' : '起始') + '</span><b>' + x.v + '</b><span>積分</span></div>').join('') + '</div>' + speedBar();
   const label = M.label + (R.mode === 'fx' ? '・' + (R.arg === '*' ? '全部數字' : R.arg) : R.mode === 'note' ? '・' + NOTEM[R.arg].title : (R.arg && CHM[R.arg] ? '・' + CHM[R.arg].name : ''));
-  const prog = exam ? (R.i + 1) + ' / ' + total : (R.mode === 'blitz' ? R.pts + ' 分' : Math.min(R.i + 1, total) + ' / ' + total);
+  const prog = exam ? (R.i + 1) + ' / ' + total : Math.min(R.i + 1, total) + ' / ' + total;
   const shown = R.phase === 'shown';
   const opts = it.ord.map((oi, pos) => {
     let cls = 'opt';
@@ -1045,10 +1035,10 @@ function renderQuiz(){
     const ans = it.ord.map((oi,pos) => q.a.includes(oi + 1) ? NUM[pos] : '').join('');
     const isRe = R.requeued.has(it);
     const msg = it.ok ? '<span class="fb ok">正確' + (R.lastGain ? ' <span class="xpfloat">+' + R.lastGain + ' 積分</span>' + (R.lastSpd && R.lastSpd.sb ? '<span class="spdtag">' + (R.lastSpd.sb >= 20 ? '⚡ 閃電 ' : R.lastSpd.sb >= 10 ? '快手 ' : '') + R.lastSpd.sec.toFixed(3) + ' 秒 +' + R.lastSpd.sb + '</span>' : '') : '') + (isRe ? '<small>已修正，這題留在錯題本等之後複習</small>' : (R.combo >= 3 ? '<small>' + R.combo + ' 連擊，積分 ' + volt(R.combo).v + (R.healed ? '，補回一顆愛心' : '') + '</small>' : '')) + '</span>'
-      : '<span class="fb bad">答錯，正解 ' + ans + '<small>' + (R.fuses !== null ? (R.fuses > 0 ? '扣一顆愛心，剩 ' + R.fuses + ' 顆；這題會在回合末再出一次' : '愛心用完，回合結束') : (R.mode === 'blitz' ? '扣 3 秒' : '已記入錯題本')) + '</small></span>';
-    if (it.ok && q.x && !R.showExp && R.mode !== 'blitz') foot = msg + '<button class="linkbtn" data-x="exp">看詳解</button>';
+      : '<span class="fb bad">答錯，正解 ' + ans + '<small>' + (R.fuses !== null ? (R.fuses > 0 ? '扣一顆愛心，剩 ' + R.fuses + ' 顆；這題會在回合末再出一次' : '愛心用完，回合結束') : '已記入錯題本') + '</small></span>';
+    if (it.ok && q.x && !R.showExp) foot = msg + '<button class="linkbtn" data-x="exp">看詳解</button>';
     else foot = msg;
-    foot = foot + (R.mode === 'blitz' ? '' : '<button class="btn primary" data-x="next" id="nextBtn">' + (R.fuses !== null && R.fuses <= 0 ? '查看結果' : (R.i + 1 >= total ? '完成回合' : '下一題')) + '</button>');
+    foot = foot + '<button class="btn primary" data-x="next" id="nextBtn">' + (R.fuses !== null && R.fuses <= 0 ? '查看結果' : (R.i + 1 >= total ? '完成回合' : '下一題')) + '</button>';
   }
   const nav = exam ? '<div class="navgrid" aria-label="題目導覽">' + R.items.map((x,i) => '<button data-jump="' + i + '" class="' + (x.done ? 'done ' : '') + (i === R.i ? 'cur ' : '') + (x.q.multi ? 'm' : '') + '">' + (i + 1) + '</button>').join('') + '</div><p class="muted" style="font-size:12px">底線標示為複選題（每題 2 分），其餘單選每題 1 分。交卷後才公布答案。</p>' : '';
   $('#view').innerHTML =
@@ -1058,7 +1048,7 @@ function renderQuiz(){
     '<article class="qcard"><div class="qmeta"><span class="mono">NFB-' + pad(q.c) + '</span><span>' + esc(CHM[q.c].name) + '</span><span>第 ' + q.n + ' 題</span>' + (q.multi ? '<span class="chip multi">複選</span>' : '<span class="chip">單選</span>') + (R.requeued.has(it) ? '<span class="chip">再測</span>' : '') + (R.mode !== 'exam' && !R.requeued.has(it) ? (it.w0 ? '<span class="chip">曾錯 ' + it.w0 + ' 次</span>' : (it.isNew ? '<span class="chip">新題</span>' : '')) : '') + '</div>' +
     '<div class="stem">' + rich(q.q, q) + '</div><div class="opts">' + opts + '</div></article>' +
     '<div class="qfoot">' + foot + '</div>' +
-    (shown && R.mode !== 'blitz' ? expHTML(q, !it.ok || R.showExp) : '') + nav;
+    (shown ? expHTML(q, !it.ok || R.showExp) : '') + nav;
   if (R.endAt) onTick();
   const nb = $('#nextBtn'); if (nb) nb.focus({preventScroll:true});
   // 只在作答結果或詳解開頭被擋住時才輕輕捲動，避免畫面一直跳
@@ -1090,9 +1080,12 @@ function renderResult(r){
   } else if (r.mode === 'boss') {
     const pass = r.pct >= .8;
     head = '<div class="score">' + Math.round(r.pct * 100) + '<small>%</small></div><div><span class="stamp ' + (pass ? 'pass' : 'fail') + '">' + (pass ? '耐壓合格' : '未通過') + '</span><p class="muted">' + esc(CHM[r.arg].name) + '：答對 ' + r.ok + ' / ' + r.items.length + '。' + (pass ? '合格獎勵 +100 積分。' : '需要 12 題以上才合格，先用回路練習補弱點。') + '</p></div>';
-  } else if (r.mode === 'blitz') {
-    const bm = r.items.filter(x => x.ok && x.q.multi).length;
-    head = '<div class="score">' + r.pts + '<small> 分</small></div><div><span class="stamp pass">搶修結束</span><p class="muted">60 秒內答對 ' + r.ok + ' 題（單選 ' + (r.ok - bm) + '、複選 ' + bm + '）' + (r.pts > (r.prevBest || 0) ? '，刷新個人紀錄。' : '，個人最佳 ' + S.best.blitz + ' 分。') + '</p></div>';
+  } else if (r.mode === 'sweep') {
+    const miss = CH.filter(c => r.per[c.id] && r.per[c.id][0] < r.per[c.id][1]);
+    head = '<div class="score">' + r.ok + '<small> / ' + r.n + '</small></div><div><span class="stamp ' + (r.ok >= 16 ? 'pass' : 'fail') + '">' + (miss.length ? '巡檢完成' : '全盤正常') + '</span><p class="muted">' +
+      (miss.length ? '有 ' + miss.length + ' 個工作項目答錯，下面紅色的回路建議先用「回路練習」補強。' : '19 個工作項目全部答對。') + (r.ok > r.prevBest ? '刷新個人紀錄。' : '個人最佳 ' + S.best.sweep + ' / 20。') + '</p></div>';
+    extra = '<div class="sec-h"><h2>巡檢報告 · 19 個工作項目</h2><span class="muted" style="font-size:13px">紅色＝這次答錯，點一下可直接練習該回路</span></div><div class="sweep">' +
+      CH.filter(c => r.per[c.id]).map(c => { const p = r.per[c.id], bad = p[0] < p[1]; const tag = bad ? 'button' : 'div'; return '<' + tag + (bad ? ' class="x" data-act="practice" data-ch="' + c.id + '" title="開始這個回路的回路練習"' : '') + '><i aria-hidden="true"></i><span class="mono">' + pad(c.id) + '</span><span>' + esc(c.name) + (p[1] > 1 ? '（' + p[0] + '/' + p[1] + '）' : '') + '</span>' + (bad ? '<span class="go">練習 →</span>' : '') + '</' + tag + '>'; }).join('') + '</div>';
   } else {
     const trip = r.reason === 'trip';
     head = '<div class="score">' + r.ok + '<small> / ' + r.n + '</small></div><div><span class="stamp ' + (trip ? 'fail' : 'pass') + '">' + (trip ? '愛心用完' : '回合完成') + '</span><p class="muted">' + (trip ? '愛心用完了。答錯的題目已排進錯題本，過一分鐘就會再出現。' : '答錯的題目已排進錯題本，會依間隔重複出現直到熟練。') + '</p></div>';
@@ -1228,12 +1221,12 @@ function achHTML(){
   const badges = ACH.map(a => '<div class="badge' + (S.ach[a[0]] ? ' got' : '') + '"><span class="ic">' + a[3] + '</span><span><b>' + a[1] + '</b><span>' + a[2] + '</span></span></div>').join('');
   const seen = Object.keys(S.q).length, mast = QS.filter(q => lvl(q.k) >= 3).length;
   return '<div class="sec-h" style="margin-top:0"><h2>技術等級</h2><span class="muted" style="font-size:13px">答對得積分：單選 10、複選 15，快答再加最多 30（依毫秒遞減），最後乘上連擊倍率；耐壓合格 +100；每日 30 題 +50</span></div><div class="ladder">' + ladder + '</div>' +
-    '<div class="tiles"><div><b>' + S.tot.a + '</b><span>累計作答</span></div><div><b>' + (S.tot.a ? Math.round(S.tot.c / S.tot.a * 100) : 0) + '%</b><span>累計正確率</span></div><div><b>' + seen + '</b><span>見過的題目 / ' + QS.length + '</span></div><div><b>' + mast + '</b><span>熟練題數</span></div><div><b>' + S.best.blitz + '</b><span>閃電搶修最佳（分）</span></div><div><b>' + S.best.exam + '</b><span>模擬考最佳</span></div></div>' + histHTML() +
-    '<div class="sec-h"><h2>成就 ' + Object.keys(S.ach).length + ' / ' + ACH.length + '</h2></div><div class="badges">' + badges + '</div>' +
+    '<div class="tiles"><div><b>' + S.tot.a + '</b><span>累計作答</span></div><div><b>' + (S.tot.a ? Math.round(S.tot.c / S.tot.a * 100) : 0) + '%</b><span>累計正確率</span></div><div><b>' + seen + '</b><span>見過的題目 / ' + QS.length + '</span></div><div><b>' + mast + '</b><span>熟練題數</span></div><div><b>' + (S.best.sweep || 0) + '<small style="font-size:.6em">/20</small></b><span>全盤巡檢最佳</span></div><div><b>' + S.best.exam + '</b><span>模擬考最佳</span></div></div>' + histHTML() +
+    '<div class="sec-h"><h2>成就 ' + ACH.filter(a => S.ach[a[0]]).length + ' / ' + ACH.length + '</h2></div><div class="badges">' + badges + '</div>' +
     '<div class="sec-h"><h2>設定</h2></div><div class="settings">' +
       '<label><input type="checkbox" id="optShuffle"' + (S.opt.shuffle ? ' checked' : '') + '> 練習時隨機排列選項（避免背位置；選項內提到 ①②③④ 的題目不打亂）</label>' +
       '<label for="optBoost" style="flex-wrap:wrap">出題比例<select id="optBoost" style="font:inherit;padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink)">' + BOOSTS.map(b => '<option value="' + b[0] + '"' + (String(S.opt.boost) === b[0] ? ' selected' : '') + '>' + b[1] + '：' + b[2] + '</option>').join('') + '</select></label>' +
-      '<p class="muted" style="font-size:13px;margin:-4px 0 0">套用在回路練習、今日送電、概念練習、數字特訓、耐壓試驗、閃電搶修。「曾錯」是錯過且還沒熟練的題目，錯越多次越容易抽到；「已答對」以到期該複習的優先。某一類題目不夠時，依「未練習 → 曾錯 → 已答對」的順序補滿。錯題重修只出錯題。</p>' +
+      '<p class="muted" style="font-size:13px;margin:-4px 0 0">套用在回路練習、今日送電、概念練習、數字特訓、耐壓試驗、全盤巡檢。「曾錯」是錯過且還沒熟練的題目，錯越多次越容易抽到；「已答對」以到期該複習的優先。某一類題目不夠時，依「未練習 → 曾錯 → 已答對」的順序補滿。錯題重修只出錯題。</p>' +
       '<label><input type="checkbox" id="optExamBoost"' + (S.opt.examBoost ? ' checked' : '') + '> 模擬考加權錯題（預設關閉，維持跟正式考試一樣隨機，分數才準）</label>' +
       '<div class="actions" style="margin-top:0"><button class="btn" data-skinopen="1">更換配色（目前：' + (curSkin() === 'auto' ? '自動' : SKINS[curSkin()].name) + '）</button><button class="btn" data-reset="1" id="resetBtn">清除全部進度</button></div>' +
       '<p class="muted" style="font-size:13px">題庫：勞動部技能檢定中心 007002A15（V115071315，115 年 1 月 1 日起適用），共 862 題，扣除 7 題刪題後 ' + QS.length + ' 題。詳解由 AI 依官方答案撰寫，僅供參考；其中 40 處疑點已對照用戶用電設備裝置規則（114.05.09）等法規查證，標示「題目疑似誤植」「答案有爭議」的題目，考試仍依官方答案作答。進度' + (dbRef ? '同步在你的帳號，換裝置也會接續。' : ACCT ? '同步在帳號「' + esc(ACCT) + '」，換瀏覽器輸入同一個帳號名稱就會接續（' + ACCT_DAYS + ' 天沒使用會自動刪除）。' : '存在這個瀏覽器。按右上角「本機儲存」可以建立帳號，在不同瀏覽器之間同步。') + '</p>' +
@@ -1247,7 +1240,7 @@ function mdaHTML(){
     ['掌握感：看得到自己在進步','弱點題自動回來，熟練後退場；回路一個個點亮','Leitner 6 格間隔（1 分、10 分、1 天、3 天、7 天、16 天）、熟練＝連對 3 次、出題比例 未練習 5：曾錯 3：已答對 2（錯越多次越常出）、回路 80% 投入'],
     ['幻想：從學徒做到技術士，替整棟大樓送電','每次練習都在「送電」，等級名稱與真實證照對應','受電盤、NFB 分路、RL/GL 指示燈、等級：學徒→助手→丙級→乙級→甲級→電機技師'],
     ['探索：19 個工作項目都想點亮','自己選回路，從冷門回路找突破；從錯題跳到重點筆記，再回到同概念的題目','主匯流排 19 個燈位、回路熟練度刻度、題庫篩選（答錯過、未熟練、未作答、複選）'],
-    ['緊張與成就：有考試的臨場感','短時間衝刺、正式規格模擬、關卡驗收','閃電搶修 60 秒單複選混合（單選 1 分、複選 2 分，錯扣 3 秒）、模擬考 60 單＋20 複／100 分鐘、耐壓試驗 15 題需 80%'],
+    ['緊張與成就：有考試的臨場感','全範圍抽查、正式規格模擬、關卡驗收','全盤巡檢 19 個工作項目各 1 題＋最弱回路 1 題（共 20 題，立即詳解、巡檢報告）、模擬考 60 單＋20 複／100 分鐘、耐壓試驗 15 題需 80%'],
     ['習慣：每天回來一點點','今日目標與連續天數形成小儀式，到期題目提醒回來','今日送電（到期題＋最弱 4 回路）、每日 30 題 +50 積分、連續天數、12 個成就']
   ];
   return '<div class="mda-intro"><h2 style="font-size:22px;margin-bottom:8px">設計藍圖：MDA 架構</h2>' +
@@ -1255,7 +1248,7 @@ function mdaHTML(){
     '<div class="mda">' +
       '<section><h3>A 美感 <span class="mono">AESTHETICS</span></h3><p class="muted" style="font-size:14px">考生想要的感受</p><ul><li><b>挑戰</b>（主）：考試有門檻，練到穩定過關</li><li><b>幻想</b>：電工替大樓送電的身分</li><li><b>探索</b>：19 個工作項目逐一攻克</li><li><b>習慣儀式</b>：每天短短一輪也有收穫</li></ul></section>' +
       '<section><h3>D 動態 <span class="mono">DYNAMICS</span></h3><p class="muted" style="font-size:14px">規則跑起來後產生的行為</p><ul><li>心流循環：10 題一回合，立即回饋，馬上下一輪</li><li>風險控管：愛心讓考生想清楚再答，連對又能補回來</li><li>間隔重複：錯題自然回流，熟題自然退場</li><li>可見目標：回路燈一盞盞亮，進度一眼看到</li><li>自主選擇：自己挑回路、挑模式</li></ul></section>' +
-      '<section><h3>M 機制 <span class="mono">MECHANICS</span></h3><p class="muted" style="font-size:14px">實際寫進程式的規則</p><ul><li>積分：（單選 10、複選 15 ＋ 快答加分）× 連擊倍率；單選 10 秒、複選 20 秒內答對，依毫秒換算最多 +30</li><li>愛心 5 顆，連對 3 題補一顆；答錯的題在回合末再測一次</li><li>熟練格 0–3；回路熟練 ≥80% 投入送電</li><li>六種模式：回路練習、今日送電、錯題重修、耐壓試驗、閃電搶修、模擬考</li><li>複選全對才算對，比照正式計分</li><li>答錯立即展開詳解，再到回合末重測同一題</li><li>重點筆記：跨章概念卡，連回相關題目與「概念練習」</li><li>內建計算機：作答中隨時開啟，支援 √、次方、三角函數與 Ans，計算題不用另外找工具</li><li>數字速查：同類規定數字並排比較，可遮住自測、答錯直接跳到對照表、分組「數字特訓」</li></ul></section>' +
+      '<section><h3>M 機制 <span class="mono">MECHANICS</span></h3><p class="muted" style="font-size:14px">實際寫進程式的規則</p><ul><li>積分：（單選 10、複選 15 ＋ 快答加分）× 連擊倍率；單選 10 秒、複選 20 秒內答對，依毫秒換算最多 +30</li><li>愛心 5 顆，連對 3 題補一顆；答錯的題在回合末再測一次</li><li>熟練格 0–3；回路熟練 ≥80% 投入送電</li><li>六種模式：回路練習、今日送電、錯題重修、耐壓試驗、全盤巡檢、模擬考</li><li>複選全對才算對，比照正式計分</li><li>答錯立即展開詳解，再到回合末重測同一題</li><li>重點筆記：跨章概念卡，連回相關題目與「概念練習」</li><li>內建計算機：作答中隨時開啟，支援 √、次方、三角函數與 Ans，計算題不用另外找工具</li><li>數字速查：同類規定數字並排比較，可遮住自測、答錯直接跳到對照表、分組「數字特訓」</li></ul></section>' +
     '</div>' +
     '<div class="sec-h"><h2>從感受倒推到規則</h2></div>' +
     '<div class="chain"><div class="row hdr"><div>美感（目標）</div><div>動態（行為）</div><div>機制（規則）</div></div>' + rows.map(r => '<div class="row"><div>' + r[0] + '</div><div>' + r[1] + '</div><div>' + r[2] + '</div></div>').join('') + '</div>' +
@@ -1435,7 +1428,7 @@ document.addEventListener('keydown', e => {
     if (e.target.tagName === 'BUTTON' && e.target.dataset.x !== 'next' && !e.target.classList.contains('opt')) return;
     e.preventDefault();
     if (R.mode === 'exam') return;
-    if (R.phase === 'ask') submit(); else if (R.mode !== 'blitz') next();
+    if (R.phase === 'ask') submit(); else next();
   }
   else if (R.mode === 'exam' && e.key === 'ArrowRight') examGo(R.i + 1);
   else if (R.mode === 'exam' && e.key === 'ArrowLeft') examGo(R.i - 1);
