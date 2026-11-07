@@ -722,7 +722,7 @@ function wpick(pool, n, useBoost){
 function weakest(k){ return CH.slice().sort((a,b) => mastery(a.id) - mastery(b.id)).slice(0, k).map(c => c.id); }
 
 /* ================= round engine ================= */
-let R = null, tick = null;
+let R = null, tick = null, LASTWRONG = [];   // 上一回合答錯的題目（結果頁「重做剛才答錯的」用）
 const MODES = {
   practice:{label:'回路練習', fuses:HEARTS, feedback:true},
   daily:{label:'今日送電', fuses:HEARTS, feedback:true},
@@ -740,11 +740,11 @@ function start(mode, arg){
   else if (mode === 'daily') { const due = new Set(dueList(QS)), w = weakest(4); list = pick(QS.filter(q => w.includes(q.c) || due.has(q)), 15); }
   else if (mode === 'note') list = pick(noteQs(arg), 10);
   else if (mode === 'fx') list = pick(fxKeys(arg).map(k => QK[k]).filter(Boolean), 10);
-  else if (mode === 'review') { const pool = (arg ? BY[arg] : QS).filter(q => { const s = S.q[q.k]; return s && s[2] > 0 && s[0] < 3; }); const now = Date.now(); list = shuffle(pool.sort((a,b) => qweight(b, now, 1) - qweight(a, now, 1)).slice(0, 12)); }   // 錯最多次、隔最久的先出
+  else if (mode === 'review') { const pool = (arg === 'last' ? LASTWRONG : arg ? BY[arg] : QS).filter(q => { const s = S.q[q.k]; return s && s[2] > 0 && s[0] < 3; }); const now = Date.now(); list = arg === 'last' ? shuffle(pool.slice()) : shuffle(pool.sort((a,b) => qweight(b, now, 1) - qweight(a, now, 1)).slice(0, 12)); }   // 全域：錯最多次、隔最久的先出；last：剛才答錯的全部重做
   else if (mode === 'boss') list = pick(BY[arg], 15);
   else if (mode === 'sweep') list = sweepList();
   else if (mode === 'exam') { const b = S.opt.examBoost, s = wpick(QS.filter(q => !q.multi), 60, b), m = wpick(QS.filter(q => q.multi), 20, b); list = shuffle(s).concat(shuffle(m)); }
-  if (!list.length) { toast(mode === 'review' ? '這裡沒有待重修的錯題' : '沒有可出的題目'); return; }
+  if (!list.length) { toast(mode === 'review' ? (arg === 'last' ? '剛才答錯的題目都已經修正了' : '這裡沒有待重修的錯題') : '沒有可出的題目'); return; }
   const M = MODES[mode];
   R = {mode, arg, M, items:list.map(makeItem), i:0, fuses:M.fuses, combo:0, maxCombo:0, xp:0, ok:0, n:0, requeued:new Set(), onBefore:CH.filter(c => isOn(c.id)).map(c => c.id), endAt: M.secs ? Date.now() + M.secs*1000 : 0, confirmQuit:false, confirmSubmit:false, phase:'ask', pts:0, qAt:performance.now(), boosted: mode === 'exam' && S.opt.examBoost && S.opt.boost > 0};
   pendingAch = [];
@@ -841,7 +841,7 @@ function finish(reason){
   if (r.mode === 'sweep') { const per = {}; r.items.forEach(it => { if (r.requeued.has(it)) return; const p = per[it.q.c] || (per[it.q.c] = [0,0]); p[1]++; if (it.ok) p[0]++; });
     r.per = per; r.prevBest = S.best.sweep || 0; S.best.sweep = Math.max(r.prevBest, r.ok); if (r.ok >= 18) unlock('sweep18'); }
   unlock('first'); checkAch();
-  const lab = r.M.label + (r.mode === 'fx' ? '・' + (r.arg === '*' ? '全部數字' : r.arg) : r.mode === 'note' ? '・' + NOTEM[r.arg].title : (r.arg && CHM[r.arg] ? '・' + CHM[r.arg].name : ''));
+  const lab = r.M.label + (r.mode === 'fx' ? '・' + (r.arg === '*' ? '全部數字' : r.arg) : r.mode === 'note' ? '・' + NOTEM[r.arg].title : r.arg === 'last' ? '・剛才答錯的' : (r.arg && CHM[r.arg] ? '・' + CHM[r.arg].name : ''));
   const rec = {t:Date.now(), m:r.mode, l:lab, ok:r.ok, n:r.n, xp:r.xp, mc:r.maxCombo, sp: r.spN ? +(r.spT / r.spN / 1000).toFixed(2) : 0};
   if (r.mode === 'exam') rec.sc = r.score + ' 分'; else if (r.mode === 'sweep') rec.sc = r.ok + ' / ' + r.n; else if (r.mode === 'boss') rec.sc = Math.round(r.pct * 100) + '%';
   if (reason === 'trip') rec.tr = 1;
@@ -996,7 +996,7 @@ function renderQuiz(){
   const timer = R.endAt ? '<span class="timer" id="timer">--:--</span>' : '';
   const vi = VOLTS.indexOf(volt(R.combo));
   const voltBar = exam ? '' : '<div class="volt" title="連續答對，積分倍率提高">' + VOLTS.map((x,i) => '<div class="' + (i <= vi ? 'lit' : '') + (i === vi ? ' cur' : '') + '"><span>' + (i ? x.at + ' 連擊' : '起始') + '</span><b>' + x.v + '</b><span>積分</span></div>').join('') + '</div>' + speedBar();
-  const label = M.label + (R.mode === 'fx' ? '・' + (R.arg === '*' ? '全部數字' : R.arg) : R.mode === 'note' ? '・' + NOTEM[R.arg].title : (R.arg && CHM[R.arg] ? '・' + CHM[R.arg].name : ''));
+  const label = M.label + (R.mode === 'fx' ? '・' + (R.arg === '*' ? '全部數字' : R.arg) : R.mode === 'note' ? '・' + NOTEM[R.arg].title : R.arg === 'last' ? '・剛才答錯的' : (R.arg && CHM[R.arg] ? '・' + CHM[R.arg].name : ''));
   const prog = exam ? (R.i + 1) + ' / ' + total : Math.min(R.i + 1, total) + ' / ' + total;
   const shown = R.phase === 'shown';
   const opts = it.ord.map((oi, pos) => {
@@ -1074,11 +1074,12 @@ function renderResult(r){
   r.newOn.forEach(c => notes.push('NFB-' + pad(c) + '「' + CHM[c].name + '」熟練度達 80%，開關投入，紅燈亮。'));
   r.ach.forEach(a => notes.push('解鎖成就：' + a[1] + '（' + a[2] + '）'));
   const wrong = r.items.filter((it, i, arr) => it.ok === false && arr.findIndex(x => x.q === it.q) === i);
+  LASTWRONG = wrong.map(it => it.q);
   $('#view').innerHTML =
     '<div class="res-head">' + head + '</div>' +
     '<div class="tiles"><div><b>+' + r.xp + '</b><span>獲得積分</span></div><div><b>' + acc + '%</b><span>正確率</span></div><div><b>' + r.maxCombo + '</b><span>最長連對</span></div><div><b>' + onCount() + '/19</b><span>送電回路</span></div></div>' +
     notes.map(n => '<div class="notice">' + esc(n) + '</div>').join('') +
-    '<div class="actions"><button class="btn primary" data-again="1">再來一回</button><button class="btn" data-home="1">回受電盤</button>' + (wrong.length ? '<button class="btn" data-go="review">錯題重修</button>' : '') + '</div>' +
+    '<div class="actions"><button class="btn primary" data-again="1">再來一回</button><button class="btn" data-home="1">回受電盤</button>' + (wrong.length ? '<button class="btn" data-relast="1">重做剛才答錯的 ' + wrong.length + ' 題</button>' : '') + '</div>' +
     extra +
     (wrong.length ? '<div class="sec-h"><h2>這回合答錯的 ' + wrong.length + ' 題</h2><span class="muted" style="font-size:13px">綠色為正解，刪除線為你的選擇</span></div><div class="rev">' + revHTML(wrong.map(it => ({q:it.q, sel:it.sel})), 'res') + '</div>' : '');
   window.scrollTo({top:0});
@@ -1338,6 +1339,7 @@ document.addEventListener('click', e => {
   if (d.jump !== undefined) { examGo(+d.jump); return; }
   if (d.ch && (t.classList.contains('brk') || t.classList.contains('drop'))) { sheet(+d.ch); return; }
   if (d.act) { closeLayer(); if (d.act === 'browse') { BK = {ch:+d.ch, f:'all', s:'', hide:BK.hide, n:30}; setTab('book'); } else start(d.act, +d.ch); return; }
+  if (d.relast) { start('review', 'last'); return; }
   if (d.go) { start(d.go); return; }
   if (d.again && LAST) { start(LAST.mode, LAST.arg); return; }
   if (d.home) { setTab('home'); return; }
