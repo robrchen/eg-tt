@@ -461,7 +461,7 @@ const QK = {}; QS.forEach(q => QK[q.k] = q);
 const BY = {}; CH.forEach(c => BY[c.id] = QS.filter(q => q.c === c.id));
 const NUM = ['①','②','③','④'];
 const DAY = 864e5;
-const INT = [60e3, 10*60e3, DAY, 3*DAY, 7*DAY, 16*DAY];   // Leitner box spacing
+const INT = [15*60e3, 60*60e3, DAY, 3*DAY, 7*DAY, 16*DAY];   // Leitner box spacing（也是記憶衰減的半衰期）
 const ON_AT = 0.8;                                      // breaker closes at 80% mastery
 const RANKS = [[0,'學徒'],[300,'助手'],[1200,'丙級技術士'],[4000,'乙級技術士'],[10000,'甲級技術士'],[25000,'電機技師']];
 const VOLTS = [{v:'×1',m:1,at:0},{v:'×1.5',m:1.5,at:3},{v:'×2',m:2,at:6},{v:'×3',m:3,at:10}];
@@ -696,27 +696,21 @@ function checkAch(){
 }
 
 /* ================= picking questions ================= */
-/* 出題比例：每回合依「未練習 : 曾錯 : 已答對」配額抽題，某類不夠時依 未練習 → 曾錯 → 已答對 的順序補滿
-   曾錯＝錯過且還沒熟練（錯越多次越容易抽到）；已答對＝沒錯過或錯過但已熟練（到期複習的優先） */
-const BOOSTS = [['0','平均','不分類，每題機率相同'],['1','標準','未練習 5：曾錯 3：已答對 2'],['2','加強錯題','未練習 4：曾錯 4：已答對 2']];
-const MIXR = {1:[5,3,2], 2:[4,4,2]};
-function bucketOf(q){ const s = S.q[q.k]; if (!s) return 0; return s[2] > 0 && s[0] < 3 ? 1 : 2; }
+/* 出題機率＝難度分數 D × 記憶衰減 U × 看詳解 1.3（未練習固定 1.2，略高於 D=1）
+   D（s[6]）：答錯 +1（連續答錯 +1.5）、答對 −0.5（第一次就答對 −0.7），夾在 0.3～4，最低不歸零
+   U：1 − 2^(−距上次作答時間 ÷ 目前格子的 Leitner 間隔)，剛答完 ≈0、到期 0.5、兩倍時間 0.75，下限 0.03
+   強度（設定）：平均 D^0、標準 D^1、加強錯題 D^1.6 */
+const BOOSTS = [['0','平均','只看多久沒練，不看答錯紀錄'],['1','標準','答錯越多、越久沒練，越容易出現'],['2','加強錯題','錯題再加重']];
+const STRENGTH = {0:0, 1:1, 2:1.6}, D_MIN = .3, D_MAX = 4, NEW_W = 1.2, U_MIN = .03;
+const clampD = d => Math.min(D_MAX, Math.max(D_MIN, d));
+// 舊資料沒有 s[6] 時，依答對／答錯紀錄推算
+function dsc(s){ return typeof s[6] === 'number' ? s[6] : clampD(1 + .8 * Math.min(s[2], 5) - .5 * s[1] + (s[0] === 0 && s[2] ? .5 : 0)); }
+function urgency(s, now){ return Math.max(U_MIN, 1 - Math.pow(2, -(now - s[3]) / INT[Math.min(s[0], INT.length - 1)])); }
 function wsample(list, n, w){ return list.map(q => [Math.pow(Math.random(), 1 / w(q)), q]).sort((a,b) => b[0] - a[0]).slice(0, n).map(x => x[1]); }
+function qweight(q, now, k){ const s = S.q[q.k]; if (!s) return NEW_W; return urgency(s, now) * Math.pow(dsc(s), k) * (s[5] ? 1.3 : 1); }
 function pick(pool, n){
-  const r = MIXR[S.opt.boost];
-  if (!r) return shuffle(pool.slice()).slice(0, n);
-  const now = Date.now(), B = [[],[],[]];
-  pool.forEach(q => B[bucketOf(q)].push(q));
-  const due = q => st(q.k)[4] <= now;
-  // 隱性微調：曾錯但之後已答對 → 稍降（連對 1 次 ×0.75、2 次 ×0.55）；答對後點開詳解（可能是猜的）→ ×1.3，下次作答後清除
-  const RECOV = [1, .75, .55], peek = q => st(q.k)[5] ? 1.3 : 1;
-  const W = [() => 1, q => Math.min(st(q.k)[2], 4) * RECOV[st(q.k)[0]] * (due(q) ? 1.5 : 1) * peek(q), q => (due(q) ? 4 : 1) * (st(q.k)[2] ? 1.5 : 1) * peek(q)];
-  n = Math.min(n, pool.length);
-  const tot = r[0] + r[1] + r[2], quota = r.map(x => Math.floor(n * x / tot));
-  for (let i = 0, rest = n - quota[0] - quota[1] - quota[2]; rest > 0; i = (i + 1) % 3, rest--) quota[i]++;
-  const take = quota.map((x,i) => Math.min(x, B[i].length));
-  for (let i = 0, left = n - take[0] - take[1] - take[2]; i < 3 && left > 0; i++) { const add = Math.min(left, B[i].length - take[i]); take[i] += add; left -= add; }
-  return shuffle([].concat(...B.map((l,i) => wsample(l, take[i], W[i]))));
+  const k = STRENGTH[S.opt.boost] ?? 1, now = Date.now();
+  return shuffle(wsample(pool, Math.min(n, pool.length), q => qweight(q, now, k)));
 }
 /* 模擬考的錯題加成：權重 = 1 + 強度 × 錯誤次數(上限 3) × 熟練折扣 */
 function weight(q){ const s = S.q[q.k]; if (!s || !s[2] || !S.opt.boost) return 1; return 1 + S.opt.boost * Math.min(s[2], 3) * (s[0] >= 3 ? .3 : 1); }
@@ -746,7 +740,7 @@ function start(mode, arg){
   else if (mode === 'daily') { const due = new Set(dueList(QS)), w = weakest(4); list = pick(QS.filter(q => w.includes(q.c) || due.has(q)), 15); }
   else if (mode === 'note') list = pick(noteQs(arg), 10);
   else if (mode === 'fx') list = pick(fxKeys(arg).map(k => QK[k]).filter(Boolean), 10);
-  else if (mode === 'review') { const pool = (arg ? BY[arg] : QS).filter(q => { const s = S.q[q.k]; return s && s[2] > 0 && s[0] < 3; }); list = shuffle(pool.sort((a,b) => st(a.k)[0] - st(b.k)[0]).slice(0, 12)); }
+  else if (mode === 'review') { const pool = (arg ? BY[arg] : QS).filter(q => { const s = S.q[q.k]; return s && s[2] > 0 && s[0] < 3; }); const now = Date.now(); list = shuffle(pool.sort((a,b) => qweight(b, now, 1) - qweight(a, now, 1)).slice(0, 12)); }   // 錯最多次、隔最久的先出
   else if (mode === 'boss') list = pick(BY[arg], 15);
   else if (mode === 'sweep') list = sweepList();
   else if (mode === 'exam') { const b = S.opt.examBoost, s = wpick(QS.filter(q => !q.multi), 60, b), m = wpick(QS.filter(q => q.multi), 20, b); list = shuffle(s).concat(shuffle(m)); }
@@ -779,8 +773,11 @@ function same(a, b){ return a.length === b.length && a.every((x,i) => x === b[i]
 function judge(it){ const pickd = [...it.sel].map(i => i + 1).sort(); return same(pickd, it.q.a.slice().sort()); }
 function record(q, ok){
   const s = st(q.k).slice(), now = Date.now();
+  const prevWrong = s[2] > 0 && s[0] === 0, firstEver = !s[1] && !s[2], d = dsc(s);
   if (ok) { s[0] = Math.min(5, s[0] + 1); s[1]++; } else { s[0] = 0; s[2]++; }
-  s[3] = now; s[4] = now + INT[s[0]]; s.length = 5; S.q[q.k] = s;   // s[5]＝答對後看過詳解，每次作答重設
+  s[3] = now; s[4] = now + INT[s[0]]; s[5] = 0;   // s[5]＝答對後看過詳解，每次作答重設
+  s[6] = clampD(ok ? d - (firstEver ? .7 : .5) : d + (prevWrong ? 1.5 : 1));
+  S.q[q.k] = s;
   S.tot.a++; if (ok) S.tot.c++;
   const t = dstr(new Date());
   if (S.day.d !== t) { const y = new Date(); y.setDate(y.getDate()-1); S.day.streak = S.day.d === dstr(y) ? S.day.streak + 1 : 1; S.day.d = t; S.day.n = 0; }
@@ -1071,7 +1068,7 @@ function renderResult(r){
       CH.filter(c => r.per[c.id]).map(c => { const p = r.per[c.id], bad = p[0] < p[1]; const tag = bad ? 'button' : 'div'; return '<' + tag + (bad ? ' class="x" data-act="practice" data-ch="' + c.id + '" title="開始這個回路的回路練習"' : '') + '><i aria-hidden="true"></i><span class="mono">' + pad(c.id) + '</span><span>' + esc(c.name) + (p[1] > 1 ? '（' + p[0] + '/' + p[1] + '）' : '') + '</span>' + (bad ? '<span class="go">練習 →</span>' : '') + '</' + tag + '>'; }).join('') + '</div>';
   } else {
     const trip = r.reason === 'trip';
-    head = '<div class="score">' + r.ok + '<small> / ' + r.n + '</small></div><div><span class="stamp ' + (trip ? 'fail' : 'pass') + '">' + (trip ? '愛心用完' : '回合完成') + '</span><p class="muted">' + (trip ? '愛心用完了。答錯的題目已排進錯題本，過一分鐘就會再出現。' : '答錯的題目已排進錯題本，會依間隔重複出現直到熟練。') + '</p></div>';
+    head = '<div class="score">' + r.ok + '<small> / ' + r.n + '</small></div><div><span class="stamp ' + (trip ? 'fail' : 'pass') + '">' + (trip ? '愛心用完' : '回合完成') + '</span><p class="muted">' + (trip ? '愛心用完了。答錯的題目已排進錯題本，過一陣子會再出現。' : '答錯的題目已排進錯題本，會依間隔重複出現直到熟練。') + '</p></div>';
   }
   const notes = [];
   r.newOn.forEach(c => notes.push('NFB-' + pad(c) + '「' + CHM[c].name + '」熟練度達 80%，開關投入，紅燈亮。'));
@@ -1209,7 +1206,7 @@ function achHTML(){
     '<div class="sec-h"><h2>設定</h2></div><div class="settings">' +
       '<label><input type="checkbox" id="optShuffle"' + (S.opt.shuffle ? ' checked' : '') + '> 練習時隨機排列選項（避免背位置；選項內提到 ①②③④ 的題目不打亂）</label>' +
       '<label for="optBoost" style="flex-wrap:wrap">出題比例<select id="optBoost" style="font:inherit;padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink)">' + BOOSTS.map(b => '<option value="' + b[0] + '"' + (String(S.opt.boost) === b[0] ? ' selected' : '') + '>' + b[1] + '：' + b[2] + '</option>').join('') + '</select></label>' +
-      '<p class="muted" style="font-size:13px;margin:-4px 0 0">套用在回路練習、今日送電、概念練習、數字特訓、耐壓試驗、全盤巡檢。「曾錯」是錯過且還沒熟練的題目，錯越多次越容易抽到；「已答對」以到期該複習的優先。某一類題目不夠時，依「未練習 → 曾錯 → 已答對」的順序補滿。錯題重修只出錯題。</p>' +
+      '<p class="muted" style="font-size:13px;margin:-4px 0 0">每一題有一個隱藏的難度分數：答錯會加、答對會扣，但最低不歸零，所以任何題目都還有機會出現。剛做過的題目會先休息一陣子，再隨時間慢慢回來；答錯的回來得快，熟練的要隔幾天。還沒練過的題目優先。套用在回路練習、今日送電、概念練習、數字特訓、耐壓試驗、全盤巡檢；錯題重修只出錯題。</p>' +
       '<label><input type="checkbox" id="optExamBoost"' + (S.opt.examBoost ? ' checked' : '') + '> 模擬考加權錯題（預設關閉，維持跟正式考試一樣隨機，分數才準）</label>' +
       '<div class="actions" style="margin-top:0"><button class="btn" data-skinopen="1">更換配色（目前：' + (curSkin() === 'auto' ? '自動' : SKINS[curSkin()].name) + '）</button><button class="btn" data-reset="1" id="resetBtn">清除全部進度</button></div>' +
       '<p class="muted" style="font-size:13px">題庫：勞動部技能檢定中心 007002A15（V115071315，115 年 1 月 1 日起適用），共 862 題，扣除 7 題刪題後 ' + QS.length + ' 題。詳解由 AI 依官方答案撰寫，僅供參考；其中 40 處疑點已對照用戶用電設備裝置規則（114.05.09）等法規查證，標示「題目疑似誤植」「答案有爭議」的題目，考試仍依官方答案作答。進度' + (dbRef ? '同步在你的帳號，換裝置也會接續。' : ACCT ? '同步在帳號「' + esc(ACCT) + '」，換瀏覽器輸入同一個帳號名稱就會接續（' + ACCT_DAYS + ' 天沒使用會自動刪除）。' : '存在這個瀏覽器。按右上角「本機儲存」可以建立帳號，在不同瀏覽器之間同步。') + '</p>' +
