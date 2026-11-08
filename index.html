@@ -235,6 +235,10 @@ img.fig.big{display:block;margin:12px 0}
 .qcard + .exp{margin-top:12px}
 .rev .exp{margin-top:10px;font-size:15px;background:var(--bg)}
 .rev.hide article:not(.open) .exp{display:none}
+.fbk{margin-top:10px;padding-top:8px;border-top:1px dashed var(--line);font-size:14px;line-height:1.6}
+.fbk .fbnote{white-space:pre-wrap;background:var(--accent-soft);border-radius:8px;padding:8px 10px;margin-bottom:4px}
+.fbk .fbnote b{display:block;font-size:12px;color:var(--muted);font-weight:400}
+.sheet textarea{width:100%;font:inherit;line-height:1.6;padding:10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);resize:vertical;min-height:140px}
 .linkbtn{border:0;background:none;padding:4px 0;color:var(--highlight-text);font-weight:700;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
 .xpfloat{font-family:var(--f-num);font-size:22px;color:var(--highlight-text);font-weight:700}
 .navgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(38px,1fr));gap:4px;margin-top:16px}
@@ -486,7 +490,7 @@ const ACH = [
 
 /* ================= state & storage ================= */
 const LS = 'yiji-songdian-v1';
-function fresh(){ return {v:1,t:0,xp:0,hist:[],dx:{},q:{},boss:{},ach:{},day:{d:'',streak:0,n:0,goal:''},best:{blitz:0,exam:0,sweep:0},tot:{a:0,c:0},opt:{shuffle:true,boost:1,examBoost:false}}; }
+function fresh(){ return {v:1,t:0,xp:0,hist:[],dx:{},q:{},boss:{},ach:{},day:{d:'',streak:0,n:0,goal:''},best:{blitz:0,exam:0,sweep:0},tot:{a:0,c:0},fb:{},opt:{shuffle:true,boost:1,examBoost:false}}; }
 function adopt(d){ const f = fresh(); const s = Object.assign(f, JSON.parse(JSON.stringify(d||{})));
   ['day','best','tot','opt'].forEach(k => s[k] = Object.assign(fresh()[k], s[k]||{}));
   if (!d || !d.dx) s.dx = dxFromHist(s.hist); return s; }
@@ -664,7 +668,38 @@ function fxMissed(f){ return f.keys.some(k => { const s = S.q[k]; return s && s[
 function noteLinks(q){ const ids = QNOTES[q.k] || [], gs = QFX[q.k] || []; if (!ids.length && !gs.length) return ''; return '<div class="nlinks">' + (ids.length ? '相關筆記' + ids.map(id => '<button class="nlink" data-note="' + id + '">' + esc(NOTEM[id].title) + '</button>').join('') : '') + (gs.length ? '<span>數字比一比</span>' + gs.map(g => '<button class="nlink" data-fx-open="' + esc(g) + '">' + esc(g) + '</button>').join('') : '') + '</div>'; }
 function noteQs(id){ return NOTEM[id].keys.map(k => QK[k]).filter(Boolean); }
 function noteStat(id){ const l = noteQs(id); return {n:l.length, m:l.filter(q => lvl(q.k) >= 3).length, w:l.filter(q => { const s = S.q[q.k]; return s && s[2] > 0 && s[0] < 3; }).length}; }
-function expHTML(q, open){ if (!q.x) return ''; return '<div class="exp"' + (open ? '' : ' hidden') + ' id="exp"><div class="eh">詳解 <small>AI 撰寫・僅供參考</small>' + flagChip(q) + '</div>' + esc(q.x) + noteLinks(q) + '</div>'; }
+function expHTML(q, open){ if (!q.x) return ''; return '<div class="exp"' + (open ? '' : ' hidden') + ' id="exp"><div class="eh">詳解 <small>AI 撰寫・僅供參考</small>' + flagChip(q) + '</div>' + esc(q.x) + noteLinks(q) + fbBox(q) + '</div>'; }
+/* ---- 題目回饋：對題目或詳解有疑義就留言，之後統一蒐集、重寫詳解 ----
+   S.fb[k] = [文字, 時間, 已上傳 0/1]；刪除時先留 ['', 時間, 0]，伺服器刪掉後才移除 */
+const FB_MAX = 1000;
+let CID = ''; try { CID = localStorage.getItem('yiji-cid') || ''; if (!CID) { CID = Math.random().toString(36).slice(2, 12); localStorage.setItem('yiji-cid', CID); } } catch(e) { CID = Math.random().toString(36).slice(2, 12); }
+const fbText = k => { const n = S.fb && S.fb[k]; return n && n[0] ? n[0] : ''; };
+function fbBox(q){ const t = fbText(q.k);
+  return '<div class="fbk" data-fbk-box="' + q.k + '">' + (t ? '<div class="fbnote"><b>我的回饋</b>' + esc(t) + '</div>' : '') + '<button class="linkbtn" data-fbk="' + q.k + '">' + (t ? '編輯回饋' : '對這題有疑義？寫回饋') + '</button></div>'; }
+function fbSheet(k){ const q = QK[k]; if (!q) return; const t = fbText(k);
+  $('#layer').innerHTML = '<div class="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-label="題目回饋"><h3>回饋・NFB-' + pad(q.c) + ' 第 ' + q.n + ' 題</h3>' +
+    '<p class="muted" style="font-size:13px;margin-top:0">' + esc(plain(q.q).slice(0, 90)) + (plain(q.q).length > 90 ? '…' : '') + '</p>' +
+    '<textarea id="fbText" maxlength="' + FB_MAX + '" placeholder="哪裡有疑義？例如：詳解的數字跟法規不符、答案應該是③、這段看不懂…">' + esc(t) + '</textarea>' +
+    '<p class="muted" style="font-size:12px">存在你的進度裡，也會不具名傳到伺服器，之後統一整理、重寫詳解。請不要寫個人資料。Ctrl＋Enter 儲存。</p>' +
+    '<div class="actions"><button class="btn primary" data-fbk-save="' + k + '">儲存</button>' + (t ? '<button class="btn" data-fbk-del="' + k + '">刪除回饋</button>' : '') + '<button class="btn ghost" data-close-sheet="1">取消</button></div></div></div>';
+  const ta = $('#fbText'); if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } }
+function fbSet(k, text){ const t = String(text || '').trim().slice(0, FB_MAX), had = !!(S.fb && S.fb[k]);
+  if (!t && !had) return closeLayer();
+  S.fb = S.fb || {}; S.fb[k] = [t, Date.now(), 0]; save(); closeLayer();
+  const q = QK[k]; document.querySelectorAll('[data-fbk-box="' + k + '"]').forEach(el => el.outerHTML = fbBox(q));
+  if (!R && TAB === 'book' && BK.f === 'fb') bookList();
+  toast(t ? '已儲存回饋' : '已刪除回饋'); fbPush(); }
+let fbBusy = false;
+async function fbPush(){ if (fbBusy || !S.fb) return; fbBusy = true;
+  try { for (const k of Object.keys(S.fb)) { const n = S.fb[k]; if (!n || n[2]) continue;
+    const r = await api('fb', {k, t:n[0], who: ACCT ? 'a:' + ACCT : 'c:' + CID});
+    if (r.status !== 200) break;
+    if (S.fb[k] !== n) continue;   // 上傳途中又改過，下一輪再送
+    if (n[0]) n[2] = 1; else delete S.fb[k];
+    save(); } } finally { fbBusy = false; } }
+function fbExport(){ const rows = QS.filter(q => fbText(q.k)).map(q => ({k:q.k, ch:CHM[q.c].name, n:q.n, q:plain(q.q), a:q.a, fb:S.fb[q.k][0], at:new Date(S.fb[q.k][1]).toISOString()}));
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(rows, null, 1)], {type:'application/json'}));
+  a.download = '乙級題目回饋-' + dstr(new Date()) + '.json'; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500); }
 function shuffle(a){ for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
 function pad(n){ return String(n).padStart(2,'0'); }
 function dstr(d){ return d.getFullYear() + '-' + (d.getMonth()+1) + '-' + d.getDate(); }
@@ -1105,7 +1140,7 @@ function revHTML(items, mode){
     const ol = [0,1,2,3].map(i => { const r = q.a.includes(i + 1), w = it.sel && it.sel.has(i) && !r;
       return '<li class="' + (r ? 'r' : (w ? 'w' : '')) + '"><span class="n">' + NUM[i] + '</span>' + rich(q.o[i], q) + '</li>'; }).join('');
     const s = S.q[q.k];
-    return '<article><div class="hd"><span class="mono">NFB-' + pad(q.c) + ' · 第 ' + q.n + ' 題</span>' + (q.multi ? '<span class="chip multi">複選</span>' : '') + (s ? '<span>對 ' + s[1] + '・錯 ' + s[2] + '・熟練格 ' + Math.min(s[0],3) + '/3</span>' : '<span>未作答</span>') + '</div><div class="s">' + rich(q.q, q) + '</div><ol>' + ol + '</ol>' + (q.x ? '<div class="exp"><div class="eh">詳解 <small>AI 撰寫・僅供參考</small>' + flagChip(q) + '</div>' + esc(q.x) + noteLinks(q) + '</div>' : '') + (mode === 'book' ? '<button class="btn reveal" data-reveal="1">看答案與詳解</button>' : '') + '</article>'; }).join('');
+    return '<article><div class="hd"><span class="mono">NFB-' + pad(q.c) + ' · 第 ' + q.n + ' 題</span>' + (q.multi ? '<span class="chip multi">複選</span>' : '') + (s ? '<span>對 ' + s[1] + '・錯 ' + s[2] + '・熟練格 ' + Math.min(s[0],3) + '/3</span>' : '<span>未作答</span>') + '</div><div class="s">' + rich(q.q, q) + '</div><ol>' + ol + '</ol>' + (q.x ? '<div class="exp"><div class="eh">詳解 <small>AI 撰寫・僅供參考</small>' + flagChip(q) + '</div>' + esc(q.x) + noteLinks(q) + fbBox(q) + '</div>' : '') + (mode === 'book' ? '<button class="btn reveal" data-reveal="1">看答案與詳解</button>' : '') + '</article>'; }).join('');
 }
 
 function renderResult(r){
@@ -1153,7 +1188,7 @@ let BK = {ch:'', f:'all', s:'', hide:false, n:30, note:'', fx:''};
 function bookShell(){
   return (BK.fx && FGROUPS[BK.fx] ? '<div class="notice" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">數字比一比「' + esc(BK.fx) + '」的相關題目<button class="nlink" data-fx-open="' + esc(BK.fx) + '">打開對照表</button><button class="linkbtn" data-clear-note="1">顯示全部題目</button></div>' : '') + (BK.note && NOTEM[BK.note] ? '<div class="notice" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">筆記「' + esc(NOTEM[BK.note].title) + '」的相關題目<button class="nlink" data-note="' + BK.note + '">打開筆記</button><button class="linkbtn" data-clear-note="1">顯示全部題目</button></div>' : '') + '<div class="filters">' +
     '<select id="bkCh" aria-label="工作項目"><option value="">全部工作項目</option>' + CH.map(c => '<option value="' + c.id + '"' + (String(BK.ch) === String(c.id) ? ' selected' : '') + '>' + pad(c.id) + ' ' + esc(c.name) + '</option>').join('') + '</select>' +
-    '<select id="bkF" aria-label="篩選"><option value="all">全部題目</option><option value="wrong">答錯過</option><option value="weak">未熟練</option><option value="new">未作答</option><option value="multi">只看複選</option></select>' +
+    '<select id="bkF" aria-label="篩選"><option value="all">全部題目</option><option value="wrong">答錯過</option><option value="weak">未熟練</option><option value="new">未作答</option><option value="multi">只看複選</option><option value="fb">我寫過回饋</option></select>' +
     '<input id="bkS" type="search" placeholder="搜尋題目文字，例如 接地、比流器" value="' + esc(BK.s) + '">' +
     '<label><input id="bkH" type="checkbox"' + (BK.hide ? ' checked' : '') + '> 遮住答案自測</label>' +
     '</div><div class="muted" id="bkCount" style="font-size:13px;margin-bottom:6px"></div><div class="rev" id="bkList"></div><div class="actions" id="bkMore"></div>';
@@ -1167,13 +1202,14 @@ function bookList(){
   if (BK.f === 'weak') l = l.filter(q => lvl(q.k) < 3);
   if (BK.f === 'new') l = l.filter(q => !S.q[q.k]);
   if (BK.f === 'multi') l = l.filter(q => q.multi);
+  if (BK.f === 'fb') l = l.filter(q => fbText(q.k)).sort((a,b) => S.fb[b.k][1] - S.fb[a.k][1]);
   if (BK.f === 'wrong') l = l.slice().sort((a,b) => st(b.k)[2] - st(a.k)[2]);
   const s = BK.s.trim();
   if (s) l = l.filter(q => plain(q.q + q.o.join(' ')).includes(s));
   $('#bkCount').textContent = '共 ' + l.length + ' 題' + (l.length > BK.n ? '，顯示前 ' + BK.n + ' 題' : '');
   const box = $('#bkList'); box.className = 'rev' + (BK.hide ? ' hide' : '');
   box.innerHTML = l.length ? revHTML(l.slice(0, BK.n).map(q => ({q})), 'book') : '<p class="muted">沒有符合條件的題目。</p>';
-  $('#bkMore').innerHTML = l.length > BK.n ? '<button class="btn" data-more="1">再載入 30 題</button>' : '';
+  $('#bkMore').innerHTML = (l.length > BK.n ? '<button class="btn" data-more="1">再載入 30 題</button>' : '') + (BK.f === 'fb' && l.length ? '<button class="btn" data-fbk-export="1">下載全部回饋（JSON）</button>' : '');
 }
 
 /* ---- notes ---- */
@@ -1429,6 +1465,10 @@ document.addEventListener('click', e => {
   if (d.lb) { LBV.f = d.lb; render(); return; }
   if (d.skinopen) { skinSheet(); return; }
   if (d.skinPick) { applySkin(d.skinPick, true); skinSheet(); return; }
+  if (d.fbk) { fbSheet(d.fbk); return; }
+  if (d.fbkSave) { fbSet(d.fbkSave, ($('#fbText') || {}).value); return; }
+  if (d.fbkDel) { fbSet(d.fbkDel, ''); return; }
+  if (d.fbkExport) { fbExport(); return; }
   if (d.closeSheet) { closeLayer(); return; }
   if (d.reset) {
     if (t.dataset.armed) { S = fresh(); save(); toast('已清除全部進度'); setTab('ach'); }
@@ -1452,7 +1492,8 @@ document.addEventListener('input', e => { if (e.target.id === 'fxS') { clearTime
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && $('#layer').innerHTML) { closeLayer(); return; }
   if (e.key === 'Enter' && e.target.id === 'acctName') { e.preventDefault(); acctAction({acctIn:'1'}); return; }
-  if (!R || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  if (e.target.id === 'fbText') { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); const b = $('[data-fbk-save]'); if (b) fbSet(b.dataset.fbkSave, e.target.value); } return; }
+  if (!R || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
   if (/^[1-4]$/.test(e.key)) { e.preventDefault(); choose(+e.key - 1); }
   else if (e.key === 'Enter') {
     if (e.target.tagName === 'BUTTON' && e.target.dataset.x !== 'next' && !e.target.classList.contains('opt')) return;
@@ -1470,7 +1511,7 @@ if (S.opt.skin && S.opt.skin !== curSkin()) applySkin(S.opt.skin, false);
 checkAch(); pendingAch = [];
 header(); render();
 cloud(0);
-acctLabel(); acctPull();
+acctLabel(); acctPull(); fbPush();
 })();
 </script>
 

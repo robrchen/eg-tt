@@ -1,5 +1,7 @@
 // 乙級送電計畫：帳號（只用名稱、不用密碼）與進度同步
 // POST /api/sync  {op:'register'|'pull'|'push'|'delete'|'board', name, data?, force?}
+//                 {op:'fb', k, t, who}  題目回饋：Redis hash「fb」，欄位「題號|來源」，t 空字串＝刪除
+//                 {op:'fblist'}          列出全部回饋 [{k, t, at}]（不含來源）
 // 風雲榜：Redis hash「lb」，每個帳號一欄 {m:遮罩名稱, xp:總積分, dx:{日期:當日積分}, at:最後上傳}。
 // 榜上只放遮罩後的名稱（第一個字＋○○），完整帳號名稱不會傳給別人。
 // 每個帳號是一筆 Redis 資料，存活 30 天；每次讀寫都重設 30 天，所以 30 天沒用就自動刪除。
@@ -35,6 +37,7 @@ function memRedis([op, key, ...a]) {
   if (op === 'DEL') { MEM.delete(key); return live ? 1 : 0; }
   if (op === 'HSET') { const h = (live && live.h) || {}; h[a[0]] = a[1]; MEM.set(key, { h, exp: Infinity }); return 1; }
   if (op === 'HGETALL') return live && live.h ? Object.entries(live.h).flat() : [];
+  if (op === 'HLEN') return live && live.h ? Object.keys(live.h).length : 0;
   if (op === 'HDEL') { if (live && live.h) a.forEach(f => delete live.h[f]); return 1; }
   throw new Error('unsupported ' + op);
 }
@@ -50,7 +53,7 @@ function cleanName(n) {
   return s;
 }
 const keyOf = name => 'acct:' + name.toLowerCase();
-const LB = 'lb', DAY = 864e5;
+const LB = 'lb', FB = 'fb', DAY = 864e5, FB_MAX = 1000, FB_ROWS = 20000;
 const mask = name => [...name][0] + '○○';
 // 台北時間的日期字串，格式與前端 dstr() 相同（YYYY-M-D，不補零）
 const tpeDay = ms => { const d = new Date(ms + 8 * 3600e3); return d.getUTCFullYear() + '-' + (d.getUTCMonth() + 1) + '-' + d.getUTCDate(); };
@@ -88,6 +91,26 @@ export async function POST(request) {
   if (b && b.op === 'board') {
     const n = cleanName(b.name);
     try { return json(200, await board(n ? keyOf(n) : null, now)); } catch { return json(502, { error: '雲端資料庫暫時無法連線' }); }
+  }
+  if (b && b.op === 'fb') {
+    const k = typeof b.k === 'string' && /^\d{1,2}-\d{1,3}$/.test(b.k) ? b.k : null;
+    const who = typeof b.who === 'string' ? b.who.normalize('NFKC').trim().toLowerCase().slice(0, 40) : '';
+    const t = typeof b.t === 'string' ? b.t.trim().slice(0, FB_MAX) : null;
+    if (!k || !who || t === null) return json(400, { error: '格式錯誤' });
+    try {
+      if (!t) { await redis(['HDEL', FB, k + '|' + who]); return json(200, { ok: true }); }
+      if (await redis(['HLEN', FB]) >= FB_ROWS) return json(507, { error: '回饋已滿' });
+      await redis(['HSET', FB, k + '|' + who, JSON.stringify({ t, at: now })]);
+      return json(200, { ok: true });
+    } catch { return json(502, { error: '雲端資料庫暫時無法連線' }); }
+  }
+  if (b && b.op === 'fblist') {
+    try {
+      const flat = await redis(['HGETALL', FB]) || [], rows = [];
+      for (let i = 0; i < flat.length; i += 2) { let e; try { e = JSON.parse(flat[i + 1]); } catch { continue; } rows.push({ k: flat[i].split('|')[0], t: e.t, at: e.at }); }
+      rows.sort((a, b2) => a.k.localeCompare(b2.k, 'en', { numeric: true }) || a.at - b2.at);
+      return json(200, { n: rows.length, rows });
+    } catch { return json(502, { error: '雲端資料庫暫時無法連線' }); }
   }
   const name = cleanName(b && b.name);
   if (!name) return json(400, { error: '帳號名稱需為 2–20 個字' });
